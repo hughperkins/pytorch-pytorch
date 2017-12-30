@@ -271,6 +271,15 @@ static inline __host__ __device__ half lgamma(half a) {
 #endif
   }
 
+  static inline __host__ __device__ half expm1(half a) {
+#ifdef __CUDA_ARCH__
+    float fa = __half2float(a);
+    return __float2half(expm1f(fa));
+#else // __CUDA_ARCH__
+    return THC_float2half(expm1f(THC_half2float(a)));
+#endif
+  }
+
   static inline __host__ __device__ half cos(half a) {
 #ifdef __CUDA_ARCH__
 #ifdef CUDA_HALF_INSTRUCTIONS
@@ -557,6 +566,16 @@ static inline __host__ __device__ half lgamma(half a) {
 #endif
   }
 
+  static inline __host__ __device__ half atan2(half a, half b) {
+#ifdef __CUDA_ARCH__
+    float fa = __half2float(a);
+    float fb = __half2float(b);
+    return __float2half(atan2f(fa, fb));
+#else // __CUDA_ARCH__
+    return THC_float2half(atan2f(THC_half2float(a), THC_half2float(b)));
+#endif
+  }
+
 };
 #endif
 
@@ -578,6 +597,7 @@ struct THCNumerics<float> {
   static inline __host__ __device__  float exp10(float a) { return exp10f(a); }
   static inline __host__ __device__  float log  (float a) { return   logf(a); }
   static inline __host__ __device__  float log1p(float a) { return log1pf(a); }
+  static inline __host__ __device__  float expm1(float a) { return expm1f(a); }
   static inline __host__ __device__  float cos  (float a) { return   cosf(a); }
   static inline __host__ __device__  float sin  (float a) { return   sinf(a); }
   static inline __host__ __device__  float sqrt (float a) { return  sqrtf(a); }
@@ -605,6 +625,7 @@ struct THCNumerics<float> {
   static inline __host__ __device__  float mul  (float a, float b) { return a * b; }
   static inline __host__ __device__  float sub  (float a, float b) { return a - b; }
   static inline __host__ __device__  float pow  (float a, float b) { return powf(a, b); }
+  static inline __host__ __device__  float atan2(float a, float b) { return atan2f(a, b); }
 };
 
 template <>
@@ -625,6 +646,7 @@ struct THCNumerics<double> {
   static inline __host__ __device__  double exp10(double a) { return ::exp10(a); }
   static inline __host__ __device__  double log  (double a) { return   ::log(a); }
   static inline __host__ __device__  double log1p(double a) { return ::log1p(a); }
+  static inline __host__ __device__  double expm1(double a) { return ::expm1(a); }
   static inline __host__ __device__  double cos  (double a) { return   ::cos(a); }
   static inline __host__ __device__  double sin  (double a) { return   ::sin(a); }
   static inline __host__ __device__  double sqrt (double a) { return  ::sqrt(a); }
@@ -652,6 +674,7 @@ struct THCNumerics<double> {
   static inline __host__ __device__  double mul  (double a, double b) { return a * b; }
   static inline __host__ __device__  double sub  (double a, double b) { return a - b; }
   static inline __host__ __device__  double pow  (double a, double b) { return ::pow(a, b); }
+  static inline __host__ __device__  double atan2(double a, double b) { return ::atan2(a, b); }
 };
 
 /// `half` has some type conversion issues associated with it, since it

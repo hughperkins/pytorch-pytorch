@@ -548,6 +548,26 @@ class TestSparse(TestCase):
         expected = self.SparseTensor(i, exp_v, torch.Size([5, 4]))
         self.assertEqual(res, expected)
 
+    def test_sparse_mask_variable(self):
+        # TODO: remove once variable and tensor are merged
+        i = torch.autograd.Variable(self.IndexTensor([
+            [1, 3, 0, 4],
+            [2, 1, 2, 3],
+        ]))
+        v = torch.autograd.Variable(self.ValueTensor([1, 2, 3, 4]))
+        x = torch.autograd.Variable(self.SparseTensor(i.data, v.data, torch.Size([5, 4])).coalesce())
+        dense = torch.autograd.Variable(self.ValueTensor([
+            [1, 2, 3, 4],
+            [5, 6, 7, 8],
+            [9, 10, 11, 12],
+            [13, 14, 15, 16],
+            [17, 18, 19, 20],
+        ]))
+        exp_v = torch.autograd.Variable(self.ValueTensor([7, 14, 3, 20]))
+        res = dense._sparse_mask(x)
+        expected = torch.autograd.Variable(self.SparseTensor(i.data, exp_v.data, torch.Size([5, 4])))
+        self.assertEqual(res, expected)
+
     def test_sparse_mask(self):
         self._test_sparse_mask_fixed()
 
@@ -676,6 +696,15 @@ class TestSparse(TestCase):
         self._test_new_device((), 1)
         self._test_new_device((30, 20), 1)
         self._test_new_device((30, 20, 10), 1)
+
+    def test_is_sparse(self):
+        x = torch.randn(3, 3)
+        self.assertFalse(x.is_sparse)
+        self.assertFalse(torch.autograd.Variable(x).is_sparse)
+
+        x = self.SparseTensor()
+        self.assertTrue(x.is_sparse)
+        self.assertTrue(torch.autograd.Variable(x).is_sparse)
 
 
 class TestUncoalescedSparse(TestSparse):

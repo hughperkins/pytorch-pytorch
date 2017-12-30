@@ -1,5 +1,6 @@
 #include <Python.h>
 #include "torch/csrc/utils/pybind.h"
+#include "torch/csrc/autograd/grad_mode.h"
 #include "torch/csrc/autograd/profiler.h"
 
 #include "THP.h"
@@ -17,9 +18,6 @@ PyObject * THPAutograd_initExtension(PyObject *_unused)
 
   THPVariableClass      = PyMapping_GetItemString(autograd_dict,(char*)"Variable");
   THPFunctionClass      = PyMapping_GetItemString(autograd_dict,(char*)"Function");
-
-  THPUtils_assert_PyImport("torch.nn._functions.thnn", thnn_functions);
-  THPBatchNormBackwardBackwardFunction = PyObject_GetAttrString(thnn_functions,(char*)"batchnorm_double_backwards_fn");
 
   THPUtils_assert(THPVariableClass, "couldn't find Variable class in "
           "torch.autograd module");
@@ -58,3 +56,38 @@ PyObject * THPAutograd_initExtension(PyObject *_unused)
 
   Py_RETURN_TRUE;
 }
+
+namespace torch { namespace autograd {
+
+static PyObject * set_grad_enabled(PyObject* _unused, PyObject *arg) {
+  HANDLE_TH_ERRORS
+  if (!PyBool_Check(arg)) {
+    at::runtime_error("enabled must be a bool (got %s)", Py_TYPE(arg)->tp_name);
+  }
+  GradMode::set_enabled(arg == Py_True);
+  Py_RETURN_NONE;
+  END_HANDLE_TH_ERRORS
+}
+
+static PyObject * is_grad_enabled(PyObject* _unused, PyObject *arg) {
+  HANDLE_TH_ERRORS
+  if (GradMode::is_enabled()) {
+    Py_RETURN_TRUE;
+  } else {
+    Py_RETURN_FALSE;
+  }
+  END_HANDLE_TH_ERRORS
+}
+
+// autograd methods on torch._C
+static PyMethodDef methods[] = {
+  {"set_grad_enabled", (PyCFunction)set_grad_enabled, METH_O, NULL},
+  {"is_grad_enabled", (PyCFunction)is_grad_enabled, METH_NOARGS, NULL},
+  {NULL, NULL, 0, NULL}
+};
+
+PyMethodDef* python_functions() {
+  return methods;
+}
+
+}} // namespace torch::autograd

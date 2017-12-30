@@ -10,9 +10,7 @@ void assertEqualTensorList(TensorList t1, TensorList t2) {
   }
 }
 
-int main() {
-  Type & T = CPU(kFloat);
-
+void test(Type & T, Type & AccT) {
   auto t = T.randn({3, 3});
   // split
   {
@@ -105,12 +103,19 @@ int main() {
     ASSERT_ALLCLOSE(d1o.matmul(d5), d1o.expand({24, 1, 2}).bmm(d5.view({24, 2, 3})).view({3, 2, 4, 3}));
 
     // > 2-d, 2-d
+    // we use a "folding" algorithm in this case of matmul, so the direct comparison to bmm doesn't work;
+    // instead, compare to the higher precision computation (technically, we should always do this).
+    // Tolerances are selected empirically.
+    double atol = 1e-04;
+    double rtol = 1e-06;
     d2 = T.randn({3, 4});
     d2o = T.randn({4, 2});
-    ASSERT_ALLCLOSE(d3.matmul(d2), d3.bmm(d2.expand({5, 3, 4})));
-    ASSERT_ALLCLOSE(d2o.matmul(d3), d2o.expand({5, 4, 2}).bmm(d3));
+    auto result = d5.matmul(d2).toType(AccT);
 
-    ASSERT_ALLCLOSE(d5.matmul(d2), d5.view({24, 2, 3}).bmm(d2.expand({24, 3, 4})).view({3, 2, 4, 2, 4}));
+    auto d5Acc = d5.toType(AccT);
+    auto d2Acc = d2.toType(AccT);
+    auto acc_result = d5Acc.view({24, 2, 3}).bmm(d2Acc.expand({24, 3, 4})).view({3, 2, 4, 2, 4});
+    ASSERT_ALLCLOSE_TOLERANCES(result, acc_result, atol, rtol);
     ASSERT_ALLCLOSE(d2o.matmul(d5), d2o.expand({24, 4, 2}).bmm(d5.view({24, 2, 3})).view({3, 2, 4, 4, 3}));
 
     // > 2-d, > 2-d
@@ -122,6 +127,59 @@ int main() {
     // non-expandable case
     auto d5wrong = T.randn({2, 4, 2, 4, 3, 2});
     ASSERT_THROWS(d5.matmul(d5wrong), "must match the size");
+  }
+
+  // _standard_gamma_grad
+  if (!T.is_cuda()) {
+    // check empty
+    auto empty = T.ones({0});
+    ASSERT_EQUAL(empty, empty._standard_gamma_grad(empty));
+
+    // check scalar equals one element
+    auto one_scalar = T.ones({}).mul(5);
+    auto one_with_dim = T.ones({1}).mul(5);
+    ASSERT_ALLCLOSE(one_scalar._standard_gamma_grad(one_scalar),
+                    one_with_dim._standard_gamma_grad(one_with_dim).sum());
+
+    // check mixing types
+    Type & DT = CPU(kDouble);
+    auto t1 = T.randn({3, 4});
+    auto t2 = DT.randn({3, 4});
+    ASSERT_THROWS(t1._standard_gamma_grad(t2), "expected scalar type");
+  } else {
+    auto ct1 = T.randn({3, 4});
+    auto ct2 = T.randn({3, 4});
+    auto t1 = T.toBackend(Backend::CPU).randn({3, 4});
+    ASSERT_THROWS(ct1._standard_gamma_grad(ct2), "not implemented");
+    ASSERT_THROWS(ct1._standard_gamma_grad(t1), "not implemented");
+    ASSERT_THROWS(t1._standard_gamma_grad(ct2), "CUDA Backend");
+  }
+
+  // where
+  {
+    // empty
+    auto empty = T.ones({0});
+    auto &bT = T.toScalarType(ScalarType::Byte);
+    auto empty_byte = bT.ones({0});
+    ASSERT_EQUAL(empty, at::where(empty_byte, empty, empty));
+
+    // check scalar equals one element
+    auto x_scalar = T.ones({}).mul(5);
+    auto y_scalar = T.ones({}).mul(7);
+    auto cond_scalar = bT.zeros({});
+    auto x_1d = x_scalar.unsqueeze(0);
+    auto y_1d = y_scalar.unsqueeze(0);
+    auto cond_1d = cond_scalar.unsqueeze(0);
+    ASSERT_ALLCLOSE(at::where(cond_scalar, x_scalar, y_scalar).unsqueeze(0),
+                    at::where(cond_1d, x_1d, y_1d));
+  }
+}
+
+int main() {
+  test(CPU(kFloat), CPU(kDouble));
+
+  if (at::hasCUDA()) {
+    test(CUDA(kFloat), CUDA(kDouble));
   }
 
   return 0;

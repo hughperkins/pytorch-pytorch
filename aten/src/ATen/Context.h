@@ -36,6 +36,7 @@ public:
     return *generator;
   }
   bool hasCUDA() const;
+  int64_t current_device() const;
   // defined in header so that getType has ability to inline
   // call_once check. getType is called fairly frequently
   THCState* lazyInitCUDA() {
@@ -46,7 +47,18 @@ public:
   }
 #if AT_CUDA_ENABLED()
   cudaStream_t getCurrentCUDAStream() const;
+  struct cudaDeviceProp* getCurrentDeviceProperties() const;
 #endif
+  // NB: This method is *purely* whether or not a user requested
+  // that CuDNN was enabled, it doesn't actually say anything about
+  // whether or not CuDNN is actually usable.  Use cudnn_is_acceptable
+  // to test this instead
+  bool userEnabledCuDNN() const;
+  void setUserEnabledCuDNN(bool e);
+  bool benchmarkCuDNN() const;
+  void setBenchmarkCuDNN(bool);
+  bool deterministicCuDNN() const;
+  void setDeterministicCuDNN(bool);
   ~Context();
   std::unique_ptr<Generator>
     generator_registry[static_cast<int>(Backend::NumOptions)];
@@ -62,6 +74,9 @@ private:
   }
   void doInitCUDA();
   std::once_flag thc_init;
+  bool enabled_cudnn = true;
+  bool deterministic_cudnn = false;
+  bool benchmark_cudnn = false;
 };
 
 AT_API Context & globalContext();
@@ -84,6 +99,10 @@ static inline Type& CUDA(ScalarType s) {
 
 static inline bool hasCUDA() {
   return globalContext().hasCUDA();
+}
+
+static inline int64_t current_device() {
+  return globalContext().current_device();
 }
 
 }

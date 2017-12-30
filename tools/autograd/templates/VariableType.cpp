@@ -5,6 +5,7 @@
 
 #include "torch/csrc/autograd/variable.h"
 #include "torch/csrc/autograd/function.h"
+#include "torch/csrc/autograd/grad_mode.h"
 #include "torch/csrc/autograd/saved_variable.h"
 #include "torch/csrc/autograd/generated/Functions.h"
 #include "torch/csrc/autograd/functions/tensor.h"
@@ -32,6 +33,7 @@ namespace torch { namespace autograd {
 // don't want to make the codegen do the dispatch manually)
 static void setattr(jit::Node* n, jit::Symbol name, int64_t v)             { n->i_(name, v); }
 static void setattr(jit::Node* n, jit::Symbol name, const at::Scalar& v)   { n->t_(name, v.toTensor()); }
+static void setattr(jit::Node* n, jit::Symbol name, SparseTensor s)        { n->t_(name, s.tref); }
 static void setattr(jit::Node* n, jit::Symbol name, const at::IntList& v)  { n->is_(name, v); }
 static void setattr(jit::Node* n, jit::Symbol name, bool v)                { n->i_(name, v); }
 static void setattr(jit::Node* n, jit::Symbol name, double v)              { n->f_(name, v); }
@@ -63,8 +65,14 @@ std::unique_ptr<Storage> VariableType::storage(size_t size) const {
 std::unique_ptr<Storage> VariableType::storageFromBlob(void * data, int64_t size, const std::function<void(void*)> & deleter) const {
   return baseType->storageFromBlob(data, size, deleter);
 }
+std::unique_ptr<Storage> VariableType::unsafeStorageFromTH(void * th_pointer, bool retain) const {
+  return baseType->unsafeStorageFromTH(th_pointer, retain);
+}
+std::unique_ptr<Storage> VariableType::storageWithAllocator(int64_t size, std::unique_ptr<Allocator> allocator) const {
+  return baseType->storageWithAllocator(size, std::move(allocator));
+}
 Tensor VariableType::unsafeTensorFromTH(void * th_pointer, bool retain) const {
-  return baseType->unsafeTensorFromTH(th_pointer, retain);
+  return make_variable(baseType->unsafeTensorFromTH(th_pointer, retain), false);
 }
 std::unique_ptr<Generator> VariableType::generator() const {
   return baseType->generator();
@@ -95,7 +103,7 @@ Variable & VariableType::checked_cast(const Type & type, const Tensor & t, const
     runtime_error("Expected a Tensor of type %s but found an undefined Tensor for argument #%d '%s'",
         type.toString(), pos, name);
   }
-  if (&t.type() != &type) {
+  if (&t.type() != &type && &t.type() != &type.toBackend(toSparse(t.type().backend()))) {
     runtime_error("Expected object of type %s but found type %s for argument #%d '%s'",
         type.toString(), t.type().toString(), pos, name);
   }
@@ -104,6 +112,11 @@ Variable & VariableType::checked_cast(const Type & type, const Tensor & t, const
 
 Tensor & VariableType::unpack(const Tensor & t, const char * name, int pos) const {
   return checked_cast(*this, t, name, pos).data();
+}
+
+SparseTensor VariableType::unpack(SparseTensor t, const char * name, int pos) const {
+  auto backend = is_cuda() ? kSparseCUDA : kSparseCPU;
+  return SparseTensor(checked_cast(this->toBackend(backend), t.tref, name, pos).data());
 }
 
 Tensor & VariableType::unpack_long(const Tensor & t, const char * name, int pos) const {
@@ -174,27 +187,27 @@ std::vector<at::Tensor> VariableType::unpack_idxs(at::TensorList tl, const char 
   return ret;
 }
 
-Variable VariableType::as_variable(Tensor tensor) const {
+static Variable as_variable(Tensor tensor) {
   return make_variable(std::move(tensor));
 }
 
-std::tuple<Variable, Variable>
-VariableType::as_variable(std::tuple<Tensor, Tensor> tensors) const {
+static std::tuple<Variable, Variable>
+as_variable(std::tuple<Tensor, Tensor> tensors) {
   return std::make_tuple<>(
       make_variable(std::move(std::get<0>(tensors))),
       make_variable(std::move(std::get<1>(tensors))));
 }
 
-std::tuple<Variable, Variable, Variable>
-VariableType::as_variable(std::tuple<Tensor, Tensor, Tensor> tensors) const {
+static std::tuple<Variable, Variable, Variable>
+as_variable(std::tuple<Tensor, Tensor, Tensor> tensors) {
   return std::make_tuple<>(
       make_variable(std::move(std::get<0>(tensors))),
       make_variable(std::move(std::get<1>(tensors))),
       make_variable(std::move(std::get<2>(tensors))));
 }
 
-std::tuple<Variable, Variable, Variable, Variable>
-VariableType::as_variable(std::tuple<Tensor, Tensor, Tensor, Tensor> tensors) const {
+static std::tuple<Variable, Variable, Variable, Variable>
+as_variable(std::tuple<Tensor, Tensor, Tensor, Tensor> tensors) {
   return std::make_tuple<>(
       make_variable(std::move(std::get<0>(tensors))),
       make_variable(std::move(std::get<1>(tensors))),
@@ -202,7 +215,7 @@ VariableType::as_variable(std::tuple<Tensor, Tensor, Tensor, Tensor> tensors) co
       make_variable(std::move(std::get<3>(tensors))));
 }
 
-std::vector<Variable> VariableType::as_variable(TensorList tl) const {
+static std::vector<Variable> as_variable(TensorList tl) {
   std::vector<Variable> variables;
   for (auto& t : tl) {
     variables.emplace_back(make_variable(std::move(t)));
@@ -224,17 +237,17 @@ static void ensure_no_aten_scalars(Tensor & data) {
 }
 
 template<typename T>
-static VarFlags compute_flags_tmpl(T tensors) {
-  VarFlags flags = {false, false};
+static bool computes_grad_tmpl(T tensors) {
+  if (!GradMode::is_enabled()) {
+    return false;
+  }
   for (const Tensor& tensor : tensors) {
     auto& var = static_cast<const Variable&>(tensor);
-    if (var.defined()) {
-      flags.requires_grad |= var.requires_grad();
-      flags.is_volatile |= var.is_volatile();
+    if (var.defined() && var.requires_grad()) {
+      return true;
     }
   }
-  flags.requires_grad &= !flags.is_volatile;
-  return flags;
+  return false;
 }
 
 using TensorRef = std::reference_wrapper<const Tensor>;
@@ -251,12 +264,12 @@ static variable_list cast_tensor_list(const TensorList& tensors) {
   return variable_list(tensors.begin(), tensors.end());
 }
 
-static VarFlags compute_flags(const TensorRefList& tensors) {
-  return compute_flags_tmpl(tensors);
+static bool compute_requires_grad(const TensorRefList& tensors) {
+  return computes_grad_tmpl(tensors);
 }
 
-static VarFlags compute_flags(TensorList tensors) {
-  return compute_flags_tmpl(tensors);
+static bool compute_requires_grad(TensorList tensors) {
+  return computes_grad_tmpl(tensors);
 }
 
 static void check_no_requires_grad(const Tensor& tensor, const char* name) {
@@ -279,43 +292,68 @@ static function_list compute_next_functions(TensorList tensors) {
 
 static void check_inplace(const Tensor& tensor) {
   auto& var = static_cast<const Variable&>(tensor);
-  if (var.requires_grad() && !var.grad_fn()) {
+  if (var.requires_grad() && var.is_leaf() && GradMode::is_enabled()) {
     at::runtime_error(
       "a leaf Variable that requires grad has been used in an in-place operation.");
   }
 }
 
-static void set_flags(Variable& var, VarFlags flags, std::shared_ptr<Function> grad_fn, bool inplace=false, int output_nr = 0) {
+static void rebase_history(Variable& var, std::shared_ptr<Function> grad_fn, int output_nr=0) {
+  if (!var.defined()) {
+    return;
+  }
   if (grad_fn) {
     grad_fn->num_inputs = 1;
+    var.rebase_history(output_nr, std::move(grad_fn));
   }
-  if (inplace) {
-    var.rebase_history(flags, output_nr, std::move(grad_fn));
-  } else {
-    // TODO: combine this code path with the Variable construction
-    var.get()->requires_grad = flags.requires_grad;
-    var.get()->is_volatile = flags.is_volatile;
+}
+
+// var must be the only differentiable output of the function. Use the ArrayRef
+// overload for functions with multiple differentiable outputs.
+static void set_history(Variable& var, std::shared_ptr<Function> grad_fn, int output_nr=0) {
+  if (grad_fn) {
+    grad_fn->num_inputs = 1;
     var.get()->output_nr = output_nr;
     var.get()->_grad_fn = std::move(grad_fn);
   }
 }
 
-static void set_flags(at::ArrayRef<Variable> vl, VarFlags flags, std::shared_ptr<Function> grad_fn) {
+static void set_history(at::ArrayRef<Variable> vl, std::shared_ptr<Function> grad_fn) {
   if (grad_fn) {
     grad_fn->num_inputs = vl.size();
-  }
-  int64_t output_nr = 0;
-  for (auto& var : vl) {
-    // TODO: combine this with the Variable construction
-    var.get()->requires_grad = flags.requires_grad;
-    var.get()->is_volatile = flags.is_volatile;
-    var.get()->output_nr = output_nr;
-    var.get()->_grad_fn = grad_fn;
-    output_nr++;
+    int64_t output_nr = 0;
+    for (auto& var : vl) {
+      if (!var.defined()) continue;
+      // TODO: combine this with the Variable construction
+      var.get()->output_nr = output_nr;
+      var.get()->_grad_fn = grad_fn;
+      output_nr++;
+    }
   }
 }
 
-std::vector<Tensor> as_tensor_list(std::vector<Variable> &vars) {
+static variable_list flatten(const TensorList& tensors) {
+  return cast_tensor_list(tensors);
+}
+
+static variable_list flatten(const Tensor& x, const TensorList& y) {
+  std::vector<Variable> r;
+  r.reserve(1 + y.size());
+  r.emplace_back(x);
+  r.insert(r.end(), y.begin(), y.end());
+  return r;
+}
+
+static variable_list flatten(const Tensor& x, const TensorList& y, const Tensor& z) {
+  std::vector<Variable> r;
+  r.reserve(2 + y.size());
+  r.emplace_back(x);
+  r.insert(r.end(), y.begin(), y.end());
+  r.emplace_back(z);
+  return r;
+}
+
+static std::vector<Tensor> as_tensor_list(std::vector<Variable> &vars) {
   std::vector<Tensor> tensors;
   for (auto& v : vars) {
     tensors.emplace_back(std::move(v));
@@ -332,26 +370,26 @@ static bool isFloatingPoint(ScalarType s) {
   return s == kFloat || s == kDouble || s == kHalf;
 }
 
-void VariableType::s_copy(const Tensor & src, Tensor & dst) const {
+Tensor & VariableType::s_copy_(Tensor & self, const Tensor & src, bool async) const {
   // TODO: once copy is exposed in Declarations.yaml we may be able to bind
   // it automatically
-  auto& src_ = unpack_any(src, "src", 0);
-  auto& dst_ = unpack(dst, "dst", 1);
-  check_inplace(dst);
+  auto& self_ = unpack(self, "self", 0);
+  auto& src_ = unpack_any(src, "src", 1);
+  check_inplace(self);
   std::shared_ptr<CopyBackwards> grad_fn;
-  auto flags = compute_flags({ dst, src });
-  flags.requires_grad &= isFloatingPoint(dst.type().scalarType());
-  if (flags.requires_grad) {
-    // TODO: handle device movement
+  auto requires_grad = compute_requires_grad({ self, src });
+  requires_grad &= isFloatingPoint(self.type().scalarType());
+  if (requires_grad) {
     grad_fn = std::make_shared<CopyBackwards>();
-    grad_fn->next_functions = compute_next_functions({ dst, src });
+    grad_fn->next_functions = compute_next_functions({ self, src });
     grad_fn->num_inputs = 1;
     grad_fn->src_type = &src.type();
     grad_fn->src_device = src.is_cuda() ? src.get_device() : -1;
   }
-  baseType->s_copy(src_, dst_);
-  increment_version(dst);
-  set_flags(static_cast<Variable&>(dst), flags, std::move(grad_fn), true);
+  baseType->s_copy_(self_, src_, async);
+  increment_version(self);
+  rebase_history(static_cast<Variable&>(self), std::move(grad_fn));
+  return self;
 }
 
 Tensor & VariableType::resize_(Tensor & self, IntList size) const {
@@ -375,7 +413,7 @@ Tensor VariableType::contiguous(const Tensor & self) const {
   return self.clone();
 }
 
-std::vector<int64_t> to_arg_sizes(TensorList tensors, int64_t dim) {
+static std::vector<int64_t> to_arg_sizes(TensorList tensors, int64_t dim) {
   std::vector<int64_t> arg_sizes(tensors.size());
   for (size_t i = 0; i < tensors.size(); ++i) {
     arg_sizes[i] = tensors[i].size(dim);

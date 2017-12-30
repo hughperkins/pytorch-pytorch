@@ -26,11 +26,6 @@ Tensor not_implemented(const char* name) {
       std::string("the derivative for '") + name + "' is not implemented");
 }
 
-Tensor not_differentiable(const char* name) {
-  throw std::runtime_error(
-      std::string("'") + name + "' is not differentiable");
-}
-
 Tensor maybe_multiply(const Tensor & t, const Scalar & s) {
   bool is_one = false;
   if (s.isFloatingPoint()) {
@@ -188,7 +183,7 @@ Tensor renorm_backward(const Tensor & grad, const Tensor & self, Scalar p, int64
 
   // TODO: remove the detach once comparison ops no longer require grad
   auto mask = Variable(norm < maxnorm).detach();
-  return grad * mask.type_as(grad) + grad_norm * (1 - mask).type_as(grad);
+  return at::where(mask, grad, grad_norm);
 }
 
 Tensor select_backward_scalar(Tensor grad, const Tensor & input, const Tensor & value) {
@@ -312,6 +307,14 @@ Tensor split_backward(const std::vector<torch::autograd::Variable> &grads, int64
 
   auto ret =  at::cat(grads_all_defined, dim);
   return ret;
+}
+
+Tensor adaptive_max_pool_double_backward(const Tensor & grad, const Tensor & self, const Tensor & indices, int dim) {
+  TORCH_ASSERT(indices.dim() >= dim);
+  auto size = std::vector<int64_t>(indices.sizes().slice(0, indices.dim() - dim));
+  size.push_back(-1);
+  auto indices_view = indices.view(size);
+  return grad.contiguous().view(size).gather(-1, indices_view).view(indices.sizes());
 }
 
 Tensor glu_double_backward(const Tensor & grad, const Tensor & grad_output, const Tensor & input, int64_t dim) {
@@ -657,7 +660,175 @@ std::tuple<Tensor, Tensor> trtrs_backward(
   return std::tuple<Tensor, Tensor>{grad_b, grad_a};
 }
 
+Tensor sum_exclude_dim1(const Tensor& to_sum, bool keepdim=true) {
+  auto r = to_sum.sum(0, keepdim);
+  int64_t start_point_exclusive = keepdim ? 1 : 0;
+  for (int64_t dim = r.dim() - 1; dim > start_point_exclusive; dim--) {
+    r = r.sum(dim, keepdim);
+  }
+  return r;
 }
+
+// similar to expand_as below, but doesn't do the expand_as; operates as if
+// reductions were done with keepdim=True
+Tensor unsqueeze_dim1(const Tensor& src, const Tensor& target) {
+  auto src_expanded = src;
+  while (src_expanded.sizes().size() < target.sizes().size() - 1) {
+    src_expanded = src_expanded.unsqueeze(1);
+  }
+  if (src_expanded.sizes().size() == target.sizes().size() - 1) {
+    src_expanded = src_expanded.unsqueeze(0);
+  }
+  return src_expanded;
+}
+
+// Helper for batchnorm_double_backward
+// because gamma/ggG/ggB are 1-dimensional and represent dim==1, we can't
+// do a straight expansion because it won't follow the broadcasting rules.
+Tensor expand_as_dim1(const Tensor& src, const Tensor& target) {
+  auto src_expanded = src;
+  while (src_expanded.sizes().size() < target.sizes().size() - 1) {
+    src_expanded = src_expanded.unsqueeze(1);
+  }
+  return src_expanded.expand_as(target);
+}
+
+// NB: This currently is PURPOSELY outside of the anonymous namespace, because
+// we are manually calling it from some legacy batchnorm invocation code.  Once
+// that code moves into derivatives.yaml, this can be moved into the anonymous
+// namespace, BUT NOT BEFORE THEN.
+std::tuple<Tensor, Tensor, Tensor> batchnorm_double_backward(
+    const Tensor & input,
+    const Tensor & gamma,
+    const Tensor & ggI,
+    const Tensor & ggG,
+    const Tensor & ggB,
+    const Tensor & gO,
+    double eps,
+    const Tensor & save_mean_v,
+    const Tensor & save_std_v,
+    const Tensor & running_mean_v,
+    const Tensor & running_var_v,
+    bool training) {
+
+  // NB: In the original design of BatchNorm, save_mean, save_std, running_mean
+  // and running_var are unconditionally tensor "buffers", and never get wrapped
+  // in variables.  However, when ATen happened, we never designed the API
+  // to allow mixed passing of tensors and variables (and this would be very
+  // confusing, because we always write "Tensor" in the signatures no matter if
+  // it's a Variable or a Tensor).  So, when a user calls
+  // batchnorm_double_backward from Python (which still thinks that these are
+  // plain tensors), it goes ahead and wraps them in variables to appease
+  // the interface that only understand variables.  Consequently, we have to
+  // unwrap them again.
+  const Tensor& save_mean = static_cast<const Variable&>(save_mean_v).data();
+  const Tensor& save_std = static_cast<const Variable&>(save_std_v).data();
+  const Tensor& running_mean = static_cast<const Variable&>(running_mean_v).data();
+  const Tensor& running_var = static_cast<const Variable&>(running_var_v).data();
+
+  bool affine = gamma.defined();
+  // TODO: Do we have a ScalarOrTensor type?  Would such a thing exist?
+  Tensor gamma_expanded;
+  Tensor ggG_expanded, ggB_expanded;
+  if (affine) {
+    gamma_expanded = expand_as_dim1(gamma, input);
+    if (ggG.defined()) {
+      ggG_expanded = expand_as_dim1(ggG, input);
+    }
+    if (ggB.defined()) {
+      ggB_expanded = expand_as_dim1(ggB, input);
+    }
+  } else {
+    gamma_expanded = input.type().tensor({}).fill_(1);
+  }
+
+  // define some terms we will reuse
+  auto M = input.size(0);
+  for (auto s : input.sizes().slice(2)) {
+    M *= s;
+  }
+  auto mu = unsqueeze_dim1(make_variable(training ? save_mean : running_mean), input);
+  auto input_sub_mu = input - mu;
+  auto sigma2_eps_neg_1_2 = unsqueeze_dim1(make_variable(training ? save_std : (running_var + Scalar(eps).toTensor()).pow(-0.5)), input);
+  auto sigma2_eps_neg_1 = sigma2_eps_neg_1_2.pow(2);
+  auto sigma2_eps_neg_3_2 = sigma2_eps_neg_1_2.pow(3);
+
+  // calculate gI
+  auto input_mu_sigma2_neg_3_2 = input_sub_mu * sigma2_eps_neg_3_2;
+  auto gOinmu_sum = sum_exclude_dim1(gO * input_sub_mu);
+  auto gO_sum = sum_exclude_dim1(gO);
+
+  Tensor gI;
+  if (ggI.defined() && training) {
+    auto ggI_sum = sum_exclude_dim1(ggI);
+    auto ggIinmu_sum = sum_exclude_dim1(ggI * input_sub_mu);
+    auto all_sub = ((ggI_sum * gO_sum).div_(M)).sub_(sum_exclude_dim1(gO * ggI)).add_(
+                    (sigma2_eps_neg_1 * gOinmu_sum * ggIinmu_sum).mul_(3. / M));
+    auto gI_0t = (input_mu_sigma2_neg_3_2 * all_sub).div_(M);
+    auto gI_1t = (ggIinmu_sum * sigma2_eps_neg_3_2).div_(M) * (gO_sum.div(M) - gO);
+    auto gI_2t = (gOinmu_sum * sigma2_eps_neg_3_2).div_(M) * (ggI_sum.div(M) - ggI);
+    gI = gamma_expanded * (gI_0t.add_(gI_1t).add_(gI_2t));
+  }
+
+  // add contribution of gamma term to gI
+  Tensor gI_G_term;
+  if (affine && ggG.defined()) {
+    if (training) {
+      auto t0 = gO * sigma2_eps_neg_1_2;
+      auto t1 = (sigma2_eps_neg_1_2 * gO_sum).div_(-M);
+      auto t2 = (input_mu_sigma2_neg_3_2 * sum_exclude_dim1(gO * input_sub_mu)).div_(-M);
+      gI_G_term = ggG_expanded * (t0.add_(t1).add_(t2));
+      gI = gI.defined() ? gI.add_(gI_G_term) : gI_G_term;
+    } else {
+      gI_G_term = ggG_expanded * sigma2_eps_neg_1_2 * gO;
+      gI = gI.defined() ? gI.add_(gI_G_term) : gI_G_term;
+    }
+  }
+
+  // this is the first backward's grad_input
+  auto first_back_grad_input = [&](const Tensor& gO, const Tensor& gamma) -> Tensor {
+    auto h0 = (gamma * sigma2_eps_neg_1_2).div_(M);
+    auto h1 = (M * gO).sub_(sum_exclude_dim1(gO)).sub_(
+                input_sub_mu.mul(sigma2_eps_neg_1) * sum_exclude_dim1(gO * input_sub_mu));
+    return h0 * h1;
+  };
+
+  // calculate gG
+  Tensor gG;
+  if (affine && ggI.defined()) {
+    if (training) {
+      // gG is just the first backwards with the gamma term removed (then shaped properly)
+      gG = ggI * first_back_grad_input(gO, sigma2_eps_neg_1_2.type().tensor({}).fill_(1));
+      gG = sum_exclude_dim1(gG, false);
+    } else {
+      gG = sum_exclude_dim1(ggI * gO * sigma2_eps_neg_1_2, false);
+    }
+  }
+
+  // calculate ggO
+  Tensor ggO;
+  // contribution of input term
+  if (ggI.defined()) {
+    if (training) {
+      ggO = first_back_grad_input(ggI, gamma_expanded);
+    } else {
+      ggO = ggI * sigma2_eps_neg_1_2 * gamma_expanded;
+    }
+  }
+  if (ggG.defined()) {
+    auto ggO_G_term = ggG_expanded * input_sub_mu * sigma2_eps_neg_1_2;
+    ggO = ggO.defined() ? ggO.add_(ggO_G_term) : ggO_G_term;
+  }
+  if (ggB.defined()) {
+    auto ggO_B_term = ggB_expanded;
+    ggO = ggO.defined() ? ggO.add_(ggO_B_term) : ggO_B_term;
+  }
+
+  return std::tuple<Tensor, Tensor, Tensor>{gI, gG, ggO};
+
+}
+
+} // anonymous namespace
 
 ${autograd_function_definitions}
 

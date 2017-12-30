@@ -1,7 +1,6 @@
-import torch.autograd.function as function
 import torch._C
 from torch import Tensor
-from torch.autograd import Variable
+from torch.autograd import Variable, function
 from torch.nn import Module, ParameterList, Parameter
 from torch._six import raise_from
 from collections import defaultdict, OrderedDict
@@ -280,14 +279,14 @@ def _clone_inputs(args):
         if a is None:
             return None
         elif isinstance(a, Variable):
-            v = Variable(a.data.clone(), requires_grad=a.requires_grad, volatile=a.volatile)
+            v = Variable(a.data.clone(), requires_grad=a.requires_grad)
             if a.grad is not None:
                 v.grad = clone_input(v.grad)
             return v
         else:
             return a.clone()
     return function._nested_map(lambda o: isinstance(o, Variable) or torch.is_tensor(o),
-                                clone_input)(args)
+                                clone_input, condition_msg="Variables")(args)
 
 
 # This is purely for developer debugging.  We are not going to advertise it.

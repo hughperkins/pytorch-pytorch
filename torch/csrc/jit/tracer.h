@@ -64,32 +64,41 @@ inline std::vector<VariableFlags> getVarFlags(const variable_list& vars) {
 // are treated as constants.
 //
 // TODO: This code lives in the hotpath; make sure it is fast
-inline bool isTracing(const Variable& var) {
+inline bool isTracingVar(const Variable& var) {
   if (!var.defined() || !var.tracing_state()) return false;
   return std::any_of(var.tracing_state()->begin(), var.tracing_state()->end(), detail::isElemActive);
 }
 
-inline bool isTracing(std::initializer_list<Variable> vars) {
-  // Reference to avoid refcount bump
-  for (auto& var : vars) {
-    if (isTracing(var)) return true;
-  }
-  return false;
-}
-
-inline bool isTracing(const at::ArrayRef<Variable>& vars) {
+inline bool isTracingVar(at::ArrayRef<Variable> vars) {
   // Reference to avoid refcount bump
   for (const Variable& var : vars) {
-    if (isTracing(var)) return true;
+    if (isTracingVar(var)) return true;
   }
   return false;
 }
 
-inline bool isTracing(const at::TensorList& vars) {
-  for (const auto & var_t : vars) {
-    if (isTracing(static_cast<const Variable&>(var_t))) return true;
-  }
+// NB: Don't forget to forward declare your template calls: they are going to
+// recursively call one another!
+template<typename... Args> inline bool isTracing();
+template<typename... Args> inline bool isTracing(const at::Tensor& x, Args... args);
+template<typename... Args> inline bool isTracing(at::ArrayRef<at::Tensor> xs, Args... args);
+
+template<typename... Args>
+inline bool isTracing() {
   return false;
+}
+
+template<typename... Args>
+inline bool isTracing(const at::Tensor& x, Args... args) {
+  return isTracingVar(x) || isTracing(args...);
+}
+
+template<typename... Args>
+inline bool isTracing(at::ArrayRef<at::Tensor> xs, Args... args) {
+  for (const auto & x : xs) {
+    if (isTracingVar(x)) return true;
+  }
+  return isTracing(args...);
 }
 
 // Retrieve the tracing state which a function applied with 'vars' should
@@ -134,19 +143,32 @@ inline void setValueTrace(const std::shared_ptr<TracingState>& state, const Vari
 // update on, but subsequently ignores it because the alpha scaling factor is zero.
 // This is one of the cases where a Variable can be created inside of a trace, and
 // if we treat it as a constant, everything will work out.
-inline Value* getValueTrace(const std::shared_ptr<TracingState>& state, const Variable& var, bool mustExist = false) {
+inline Value* getValueTrace(const std::shared_ptr<TracingState>& state, const Variable& var) {
   if (!var.defined()) {
     Node *n = state->graph->createUndefined();
     return state->graph->appendNode(n)->output();
   }
-  if (mustExist) {
-    auto vts = detail::getValueState(state, var, false);
-    if (!vts) throw std::runtime_error("untraced variable");
-    return vts->trace;
-  }
 
   auto vts = detail::getValueState(state, var, true);
   if (vts->trace) return vts->trace;
+
+  // HACK.  In an ideal world, buffers would be wrapped in variables, permitting
+  // us to trace them just like we normally would.  In fact, internally, within
+  // ATen, buffers get precisely this treatment.
+  //
+  // However, propagating this treatment would require us to do some fairly
+  // disruptive changes to Python userland, where buffers are expected to be
+  // passed around as plain tensors inside modules.  Some day we should do
+  // this, but for now, we wrap all buffers in one-off Variables.  This means
+  // they'll show up as constants when we trace.
+  //
+  // To deal with this, we cheat a little and consult the buffer map to
+  // see if the wrapped tensor corresponds to a buffer.  If it does, use
+  // that instead of making a constant.
+  auto it = state->buffer_map.find(var.data().unsafeGetTH(false));
+  if (it != state->buffer_map.end()) {
+    return it->second;
+  }
 
   Value *constant = state->graph->appendNode(state->graph->createConstant(var.data()))->output();
   constant->inferTypeFrom(var.data());
@@ -154,13 +176,21 @@ inline Value* getValueTrace(const std::shared_ptr<TracingState>& state, const Va
   return constant;
 }
 
-inline Value* getBufferTrace(const std::unordered_map<void*, Value*>& buffer_map, at::Tensor buf) {
-  auto it = buffer_map.find(buf.unsafeGetTH(false));
-  if (it == buffer_map.end()) {
-    throw std::runtime_error("untraced buffer");
-  } else {
-    return it->second;
+inline Value* getOutputTrace(const std::shared_ptr<TracingState>& state, const Variable& var, size_t output_no) {
+  if (!var.defined()) {
+    Node *n = state->graph->createUndefined();
+    return state->graph->appendNode(n)->output();
   }
+
+  auto vts = detail::getValueState(state, var, false);
+  if (!vts) {
+    std::ostringstream os;
+    os << "output " << output_no << " of traced region did not have observable "
+       << "data dependence with trace inputs; this probably indicates your program "
+       << "cannot be understood by the tracer.";
+    throw std::runtime_error(os.str());
+  }
+  return vts->trace;
 }
 
 // Only one field may be non-null
@@ -210,8 +240,10 @@ namespace detail {
 
 // Exit code shared between exit and TraceExitHook::run
 inline void _exit(const std::shared_ptr<TracingState>& state, const variable_list& outputs) {
+  size_t i = 0;
   for (auto& output : outputs) {
-    state->graph->registerOutput(getValueTrace(state, output, true));
+    state->graph->registerOutput(getOutputTrace(state, output, i));
+    i++;
   }
   state->active = false;
   state->var_flags[state->graph->stage()].second = detail::getVarFlags(outputs);

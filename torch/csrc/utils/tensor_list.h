@@ -1,10 +1,10 @@
 #pragma once
 
-#include <ATen/ATen.h>
 #include <Python.h>
+#include <ATen/ATen.h>
 
-namespace torch {
+namespace torch { namespace utils {
 
-PyObject* THPUtils_tensorToList(const at::Tensor& tensor);
+PyObject* tensor_to_list(const at::Tensor& tensor);
 
-}
+}} // namespace torch::utils

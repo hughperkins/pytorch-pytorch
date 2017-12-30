@@ -15,213 +15,179 @@ from ._functions import vision
 from torch.autograd import Variable
 from .modules.utils import _single, _pair, _triple
 
-# Convolutions
-_ConvNd = torch._C._functions.ConvNd
+
+conv1d = _add_docstr(torch._C._VariableBase.conv1d, r"""
+conv1d(input, weight, bias=None, stride=1, padding=0, dilation=1, groups=1) -> Tensor
+
+Applies a 1D convolution over an input signal composed of several input
+planes.
+
+See :class:`~torch.nn.Conv1d` for details and output shape.
+
+Args:
+    input: input tensor of shape (minibatch x in_channels x iW)
+    weight: filters of shape (out_channels x in_channels x kW)
+    bias: optional bias of shape (out_channels). Default: None
+    stride: the stride of the convolving kernel. Can be a single number or
+      a one-element tuple (sW,). Default: 1
+    padding: implicit zero paddings on both sides of the input. Can be a
+      single number or a one-element tuple (padW,). Default: 0
+    dilation: the spacing between kernel elements. Can be a single number or
+      a one-element tuple (dW,). Default: 1
+    groups: split input into groups, in_channels should be divisible by
+      the number of groups. Default: 1
+
+Examples::
+
+    >>> filters = autograd.Variable(torch.randn(33, 16, 3))
+    >>> inputs = autograd.Variable(torch.randn(20, 16, 50))
+    >>> F.conv1d(inputs, filters)
+""")
+
+conv2d = _add_docstr(torch._C._VariableBase.conv2d, r"""
+conv2d(input, weight, bias=None, stride=1, padding=0, dilation=1, groups=1) -> Tensor
+
+Applies a 2D convolution over an input image composed of several input
+planes.
+
+See :class:`~torch.nn.Conv2d` for details and output shape.
+
+Args:
+    input: input tensor (minibatch x in_channels x iH x iW)
+    weight: filters tensor (out_channels x in_channels/groups x kH x kW)
+    bias: optional bias tensor (out_channels). Default: None
+    stride: the stride of the convolving kernel. Can be a single number or a
+      tuple (sH, sW). Default: 1
+    padding: implicit zero paddings on both sides of the input. Can be a
+      single number or a tuple (padH, padW). Default: 0
+    dilation: the spacing between kernel elements. Can be a single number or
+      a tuple (dH, dW). Default: 1
+    groups: split input into groups, in_channels should be divisible by the
+      number of groups. Default: 1
+
+Examples::
+
+    >>> # With square kernels and equal stride
+    >>> filters = autograd.Variable(torch.randn(8,4,3,3))
+    >>> inputs = autograd.Variable(torch.randn(1,4,5,5))
+    >>> F.conv2d(inputs, filters, padding=1)
+""")
+
+conv3d = _add_docstr(torch._C._VariableBase.conv3d, r"""
+conv3d(input, weight, bias=None, stride=1, padding=0, dilation=1, groups=1) -> Tensor
+
+Applies a 3D convolution over an input image composed of several input
+planes.
+
+See :class:`~torch.nn.Conv3d` for details and output shape.
+
+Args:
+    input: input tensor of shape (minibatch x in_channels x iT x iH x iW)
+    weight: filters tensor of shape (out_channels x in_channels x kT x kH x kW)
+    bias: optional bias tensor of shape (out_channels). Default: None
+    stride: the stride of the convolving kernel. Can be a single number or a
+      tuple (sT, sH, sW). Default: 1
+    padding: implicit zero paddings on both sides of the input. Can be a
+      single number or a tuple (padT, padH, padW). Default: 0
+    dilation: the spacing between kernel elements. Can be a single number or
+      a tuple (dT, dH, dW). Default: 1
+    groups: split input into groups, in_channels should be divisible by
+      the number of groups. Default: 1
+
+Examples::
+
+    >>> filters = autograd.Variable(torch.randn(33, 16, 3, 3, 3))
+    >>> inputs = autograd.Variable(torch.randn(20, 16, 50, 10, 20))
+    >>> F.conv3d(inputs, filters)
+""")
+
+conv_transpose1d = _add_docstr(torch._C._VariableBase.conv_transpose1d, r"""
+conv_transpose1d(input, weight, bias=None, stride=1, padding=0, output_padding=0, groups=1, dilation=1) -> Tensor
+
+Applies a 1D transposed convolution operator over an input signal
+composed of several input planes, sometimes also called "deconvolution".
+
+See :class:`~torch.nn.ConvTranspose1d` for details and output shape.
+
+Args:
+    input: input tensor of shape (minibatch x in_channels x iW)
+    weight: filters of shape (in_channels x out_channels x kW)
+    bias: optional bias of shape (out_channels). Default: None
+    stride: the stride of the convolving kernel. Can be a single number or a
+      tuple (sW,). Default: 1
+    padding: implicit zero paddings on both sides of the input. Can be a
+      single number or a tuple (padW,). Default: 0
+    output_padding: implicit zero-paddings of 0 <= padding < stride on both
+      sides of the output. Can be a single number or a tuple (out_padW,).
+      Default: 0
+    groups: split input into groups, in_channels should be divisible by the
+      number of groups. Default: 1
+    dilation: the spacing between kernel elements. Can be a single number or
+      a tuple (dW,). Default: 1
+""")
+
+conv_transpose2d = _add_docstr(torch._C._VariableBase.conv_transpose2d, r"""
+conv_transpose2d(input, weight, bias=None, stride=1, padding=0, output_padding=0, groups=1, dilation=1) -> Tensor
+
+Applies a 2D transposed convolution operator over an input image
+composed of several input planes, sometimes also called "deconvolution".
+
+See :class:`~torch.nn.ConvTranspose2d` for details and output shape.
+
+Args:
+    input: input tensor of shape (minibatch x in_channels x iH x iW)
+    weight: filters of shape (in_channels x out_channels x kH x kW)
+    bias: optional bias of shape (out_channels). Default: None
+    stride: the stride of the convolving kernel. Can be a single number or a
+      tuple (sH, sW). Default: 1
+    padding: implicit zero paddings on both sides of the input. Can be a
+      single number or a tuple (padH, padW). Default: 0
+    output_padding: implicit zero-paddings of 0 <= padding < stride on both
+      sides of the output. Can be a single number or a tuple
+      (out_padH, out_padW). Default: 0
+    groups: split input into groups, in_channels should be divisible by the
+      number of groups. Default: 1
+    dilation: the spacing between kernel elements. Can be a single number or
+      a tuple (dH, dW). Default: 1
+""")
+
+conv_transpose3d = _add_docstr(torch._C._VariableBase.conv_transpose3d, r"""
+conv_transpose3d(input, weight, bias=None, stride=1, padding=0, output_padding=0, groups=1, dilation=1) -> Tensor
+
+Applies a 3D transposed convolution operator over an input image
+composed of several input planes, sometimes also called "deconvolution"
+
+See :class:`~torch.nn.ConvTranspose3d` for details and output shape.
+
+Args:
+    input: input tensor of shape (minibatch x in_channels x iT x iH x iW)
+    weight: filters of shape (in_channels x out_channels x kH x kW)
+    bias: optional bias of shape (out_channels). Default: None
+    stride: the stride of the convolving kernel. Can be a single number or a
+      tuple (sT, sH, sW). Default: 1
+    padding: implicit zero paddings on both sides of the input. Can be a
+      single number or a tuple (padT, padH, padW). Default: 0
+    output_padding: implicit zero-paddings of 0 <= padding < stride on both
+      sides of the output. Can be a single number or a tuple
+      (out_padT, out_padH, out_padW). Default: 0
+    groups: split input into groups, in_channels should be divisible by the
+      number of groups. Default: 1
+    dilation: the spacing between kernel elements. Can be a single number or
+      a tuple (dT, dH, dW). Default: 1
+""")
 
 
-def conv1d(input, weight, bias=None, stride=1, padding=0, dilation=1,
-           groups=1):
-    r"""Applies a 1D convolution over an input signal composed of several input
-    planes.
-
-    See :class:`~torch.nn.Conv1d` for details and output shape.
-
-    Args:
-        input: input tensor of shape (minibatch x in_channels x iW)
-        weight: filters of shape (out_channels x in_channels x kW)
-        bias: optional bias of shape (out_channels). Default: None
-        stride: the stride of the convolving kernel. Can be a single number or
-          a tuple (sW,). Default: 1
-        padding: implicit zero paddings on both sides of the input. Can be a
-          single number or a tuple (padW,). Default: 0
-        dilation: the spacing between kernel elements. Can be a single number or
-          a tuple (dW,). Default: 1
-        groups: split input into groups, in_channels should be divisible by
-          the number of groups. Default: 1
-
-    Examples::
-
-        >>> filters = autograd.Variable(torch.randn(33, 16, 3))
-        >>> inputs = autograd.Variable(torch.randn(20, 16, 50))
-        >>> F.conv1d(inputs, filters)
-    """
-    if input is not None and input.dim() != 3:
-        raise ValueError("Expected 3D tensor as input, got {}D tensor instead.".format(input.dim()))
-
-    f = _ConvNd(_single(stride), _single(padding), _single(dilation), False,
-                _single(0), groups, torch.backends.cudnn.benchmark,
-                torch.backends.cudnn.deterministic, torch.backends.cudnn.enabled)
-    return f(input, weight, bias)
-
-
-def conv2d(input, weight, bias=None, stride=1, padding=0, dilation=1,
-           groups=1):
-    r"""Applies a 2D convolution over an input image composed of several input
-    planes.
-
-    See :class:`~torch.nn.Conv2d` for details and output shape.
-
-    Args:
-        input: input tensor (minibatch x in_channels x iH x iW)
-        weight: filters tensor (out_channels x in_channels/groups x kH x kW)
-        bias: optional bias tensor (out_channels). Default: None
-        stride: the stride of the convolving kernel. Can be a single number or a
-          tuple (sH, sW). Default: 1
-        padding: implicit zero paddings on both sides of the input. Can be a
-          single number or a tuple (padH, padW). Default: 0
-        dilation: the spacing between kernel elements. Can be a single number or
-          a tuple (dH, dW). Default: 1
-        groups: split input into groups, in_channels should be divisible by the
-          number of groups. Default: 1
-
-    Examples::
-
-        >>> # With square kernels and equal stride
-        >>> filters = autograd.Variable(torch.randn(8,4,3,3))
-        >>> inputs = autograd.Variable(torch.randn(1,4,5,5))
-        >>> F.conv2d(inputs, filters, padding=1)
-    """
-    if input is not None and input.dim() != 4:
-        raise ValueError("Expected 4D tensor as input, got {}D tensor instead.".format(input.dim()))
-
-    f = _ConvNd(_pair(stride), _pair(padding), _pair(dilation), False,
-                _pair(0), groups, torch.backends.cudnn.benchmark,
-                torch.backends.cudnn.deterministic, torch.backends.cudnn.enabled)
-    return f(input, weight, bias)
-
-
-def conv3d(input, weight, bias=None, stride=1, padding=0, dilation=1,
-           groups=1):
-    r"""Applies a 3D convolution over an input image composed of several input
-    planes.
-
-    See :class:`~torch.nn.Conv3d` for details and output shape.
-
-    Args:
-        input: input tensor of shape (minibatch x in_channels x iT x iH x iW)
-        weight: filters tensor of shape (out_channels x in_channels x kT x kH x kW)
-        bias: optional bias tensor of shape (out_channels). Default: None
-        stride: the stride of the convolving kernel. Can be a single number or a
-          tuple (sT, sH, sW). Default: 1
-        padding: implicit zero paddings on both sides of the input. Can be a
-          single number or a tuple (padT, padH, padW). Default: 0
-        dilation: the spacing between kernel elements. Can be a single number or
-          a tuple (dT, dH, dW). Default: 1
-        groups: split input into groups, in_channels should be divisible by
-          the number of groups. Default: 1
-
-    Examples::
-
-        >>> filters = autograd.Variable(torch.randn(33, 16, 3, 3, 3))
-        >>> inputs = autograd.Variable(torch.randn(20, 16, 50, 10, 20))
-        >>> F.conv3d(inputs, filters)
-    """
-
-    if input is not None and input.dim() != 5:
-        raise ValueError("Expected 5D tensor as input, got {}D tensor instead.".format(input.dim()))
-
-    f = _ConvNd(_triple(stride), _triple(padding), _triple(dilation), False,
-                _triple(0), groups, torch.backends.cudnn.benchmark,
-                torch.backends.cudnn.deterministic, torch.backends.cudnn.enabled)
-    return f(input, weight, bias)
-
-
-def conv_transpose1d(input, weight, bias=None, stride=1, padding=0,
-                     output_padding=0, groups=1, dilation=1):
-    r"""Applies a 1D transposed convolution operator over an input signal
-    composed of several input planes, sometimes also called "deconvolution".
-
-    See :class:`~torch.nn.ConvTranspose1d` for details and output shape.
-
-    Args:
-        input: input tensor of shape (minibatch x in_channels x iW)
-        weight: filters of shape (in_channels x out_channels x kW)
-        bias: optional bias of shape (out_channels). Default: None
-        stride: the stride of the convolving kernel. Can be a single number or a
-          tuple (sW,). Default: 1
-        padding: implicit zero paddings on both sides of the input. Can be a
-          single number or a tuple (padW,). Default: 0
-        output_padding: implicit zero-paddings of 0 <= padding < stride on both
-          sides of the output. Can be a single number or a tuple (out_padW,).
-          Default: 0
-        groups: split input into groups, in_channels should be divisible by the
-          number of groups. Default: 1
-        dilation: the spacing between kernel elements. Can be a single number or
-          a tuple (dW,). Default: 1
-    """
-    if input is not None and input.dim() != 3:
-        raise ValueError("Expected 3D tensor as input, got {}D tensor instead.".format(input.dim()))
-
-    f = _ConvNd(_single(stride), _single(padding), _single(dilation), True,
-                _single(output_padding),
-                groups, torch.backends.cudnn.benchmark, torch.backends.cudnn.deterministic,
-                torch.backends.cudnn.enabled)
-    return f(input, weight, bias)
-
-
-def conv_transpose2d(input, weight, bias=None, stride=1, padding=0,
-                     output_padding=0, groups=1, dilation=1):
-    r"""Applies a 2D transposed convolution operator over an input image
-    composed of several input planes, sometimes also called "deconvolution".
-
-    See :class:`~torch.nn.ConvTranspose2d` for details and output shape.
-
-    Args:
-        input: input tensor of shape (minibatch x in_channels x iH x iW)
-        weight: filters of shape (in_channels x out_channels x kH x kW)
-        bias: optional bias of shape (out_channels). Default: None
-        stride: the stride of the convolving kernel. Can be a single number or a
-          tuple (sH, sW). Default: 1
-        padding: implicit zero paddings on both sides of the input. Can be a
-          single number or a tuple (padH, padW). Default: 0
-        output_padding: implicit zero-paddings of 0 <= padding < stride on both
-          sides of the output. Can be a single number or a tuple
-          (out_padH, out_padW). Default: 0
-        groups: split input into groups, in_channels should be divisible by the
-          number of groups. Default: 1
-        dilation: the spacing between kernel elements. Can be a single number or
-          a tuple (dH, dW). Default: 1
-    """
-
-    if input is not None and input.dim() != 4:
-        raise ValueError("Expected 4D tensor as input, got {}D tensor instead.".format(input.dim()))
-
-    f = _ConvNd(_pair(stride), _pair(padding), _pair(dilation), True,
-                _pair(output_padding), groups, torch.backends.cudnn.benchmark,
-                torch.backends.cudnn.deterministic, torch.backends.cudnn.enabled)
-    return f(input, weight, bias)
-
-
-def conv_transpose3d(input, weight, bias=None, stride=1, padding=0,
-                     output_padding=0, groups=1, dilation=1):
-    r"""Applies a 3D transposed convolution operator over an input image
-    composed of several input planes, sometimes also called "deconvolution"
-
-    See :class:`~torch.nn.ConvTranspose3d` for details and output shape.
+def conv_tbc(input, weight, bias, pad=0):
+    r"""Applies a 1-dimensional sequence convolution over an input sequence.
+    Input and output dimensions are (Time, Batch, Channels) hence TBC.
 
     Args:
-        input: input tensor of shape (minibatch x in_channels x iT x iH x iW)
-        weight: filters of shape (in_channels x out_channels x kH x kW)
-        bias: optional bias of shape (out_channels). Default: None
-        stride: the stride of the convolving kernel. Can be a single number or a
-          tuple (sT, sH, sW). Default: 1
-        padding: implicit zero paddings on both sides of the input. Can be a
-          single number or a tuple (padT, padH, padW). Default: 0
-        output_padding: implicit zero-paddings of 0 <= padding < stride on both
-          sides of the output. Can be a single number or a tuple
-          (out_padT, out_padH, out_padW). Default: 0
-        groups: split input into groups, in_channels should be divisible by the
-          number of groups. Default: 1
-        dilation: the spacing between kernel elements. Can be a single number or
-          a tuple (dT, dH, dW). Default: 1
+        input: input tensor of shape (sequence length x batch x channels)
+        weight: filter of shape (kernel width x input channels x output channels)
+        bias: bias of shape (output channels)
+        pad: number of timesteps to pad
     """
-    if input is not None and input.dim() != 5:
-        raise ValueError("Expected 5D tensor as input, got {}D tensor instead.".format(input.dim()))
-
-    f = _ConvNd(_triple(stride), _triple(padding), _triple(dilation), True,
-                _triple(output_padding), groups, torch.backends.cudnn.benchmark,
-                torch.backends.cudnn.deterministic, torch.backends.cudnn.enabled)
-    return f(input, weight, bias)
+    return input.conv_tbc(weight, bias, pad)
 
 
 # Pooling
@@ -311,7 +277,51 @@ Args:
 """)
 
 
-# share the same interface
+def fractional_max_pool2d(input, kernel_size, output_size=None,
+                          output_ratio=None, return_indices=False,
+                          _random_samples=None):
+    r"""Applies 2D fractional max pooling over an input signal composed of several input planes.
+
+    Fractiona MaxPooling is described in detail in the paper `Fractional MaxPooling`_ by Ben Graham
+
+    The max-pooling operation is applied in kHxkW regions by a stochastic
+    step size determined by the target output size.
+    The number of output features is equal to the number of input planes.
+
+    Args:
+        kernel_size: the size of the window to take a max over.
+                     Can be a single number k (for a square kernel of k x k) or a tuple (kh x kw)
+        output_size: the target output size of the image of the form oH x oW.
+                     Can be a tuple (oH, oW) or a single number oH for a square image oH x oH
+        output_ratio: If one wants to have an output size as a ratio of the input size, this option can be given.
+                      This has to be a number or tuple in the range (0, 1)
+        return_indices: if ``True``, will return the indices along with the outputs.
+                        Useful to pass to max_unpool2d.
+
+    Examples:
+        >>> input = autograd.Variable(torch.randn(20, 16, 50, 32))
+        >>> # pool of square window of size=3, and target output size 13x12
+        >>> F.fractional_max_pool2d(input, 3, output_size=(13, 12))
+        >>> # pool of square window and target output size being half of input image size
+        >>> F.fractional_max_pool2d(input, 3, output_ratio=(0.5, 0.5))
+
+    .. _Fractional MaxPooling:
+        http://arxiv.org/abs/1412.6071
+    """
+    if output_size is None and output_ratio is None:
+        raise ValueError("fractional_max_pool2d requires specifying either "
+                         "an output_size, or a output_ratio")
+    if output_size is None:
+        output_ratio = _pair(output_ratio)
+        output_size = (int(input.size(2) * output_ratio[0]),
+                       int(input.size(3) * output_ratio[1]))
+
+    if _random_samples is None:
+        _random_samples = input.new(input.size(0), input.size(1), 2).uniform_()
+    ret = torch._C._nn.fractional_max_pool2d(input, kernel_size, output_size, _random_samples)
+    return ret if return_indices else ret[0]
+
+
 def max_pool1d(input, kernel_size, stride=None, padding=0, dilation=1,
                ceil_mode=False, return_indices=False):
     """Applies a 1D max pooling over an input signal composed of several input
@@ -319,8 +329,7 @@ def max_pool1d(input, kernel_size, stride=None, padding=0, dilation=1,
 
     See :class:`~torch.nn.MaxPool1d` for details.
     """
-    ret = _functions.thnn.MaxPool1d.apply(input, kernel_size, stride, padding, dilation,
-                                          ceil_mode)
+    ret = torch._C._VariableBase.max_pool1d(input, kernel_size, stride, padding, dilation, ceil_mode)
     return ret if return_indices else ret[0]
 
 
@@ -342,8 +351,7 @@ def max_pool3d(input, kernel_size, stride=None, padding=0, dilation=1,
 
     See :class:`~torch.nn.MaxPool2d` for details.
     """
-    ret = _functions.thnn.MaxPool3d.apply(input, kernel_size, stride, padding, dilation,
-                                          ceil_mode)
+    ret = torch._C._nn.max_pool3d(input, kernel_size, stride, padding, dilation, ceil_mode)
     return ret if return_indices else ret[0]
 
 
@@ -448,7 +456,7 @@ def adaptive_max_pool1d(input, output_size, return_indices=False):
         output_size: the target output size (single integer)
         return_indices: whether to return pooling indices. Default: ``False``
     """
-    ret = _functions.thnn.AdaptiveMaxPool1d.apply(input, output_size)
+    ret = torch._C._VariableBase.adaptive_max_pool1d(input, output_size)
     return ret if return_indices else ret[0]
 
 
@@ -463,7 +471,7 @@ def adaptive_max_pool2d(input, output_size, return_indices=False):
             double-integer tuple)
         return_indices: whether to return pooling indices. Default: ``False``
     """
-    ret = _functions.thnn.AdaptiveMaxPool2d.apply(input, output_size)
+    ret = torch._C._nn.adaptive_max_pool2d(input, output_size)
     return ret if return_indices else ret[0]
 
 
@@ -478,46 +486,47 @@ def adaptive_max_pool3d(input, output_size, return_indices=False):
             triple-integer tuple)
         return_indices: whether to return pooling indices. Default: ``False``
     """
-    ret = _functions.thnn.AdaptiveMaxPool3d.apply(input, output_size)
+    ret = torch._C._nn.adaptive_max_pool3d(input, output_size)
     return ret if return_indices else ret[0]
 
 
-def adaptive_avg_pool1d(input, output_size):
-    r"""Applies a 1D adaptive average pooling over an input signal composed of
-    several input planes.
+adaptive_avg_pool1d = _add_docstr(torch._C._VariableBase.adaptive_avg_pool1d, r"""
+adaptive_avg_pool1d(input, output_size) -> Variable
 
-    See :class:`~torch.nn.AdaptiveAvgPool1d` for details and output shape.
+Applies a 1D adaptive average pooling over an input signal composed of
+several input planes.
 
-    Args:
-        output_size: the target output size (single integer)
-    """
-    return _functions.thnn.AdaptiveAvgPool1d.apply(input, output_size)
+See :class:`~torch.nn.AdaptiveAvgPool1d` for details and output shape.
 
+Args:
+    output_size: the target output size (single integer)
+""")
 
-def adaptive_avg_pool2d(input, output_size):
-    r"""Applies a 2D adaptive average pooling over an input signal composed of
-    several input planes.
+adaptive_avg_pool2d = _add_docstr(torch._C._nn.adaptive_avg_pool2d, r"""
+adaptive_avg_pool2d(input, output_size) -> Variable
 
-    See :class:`~torch.nn.AdaptiveAvgPool2d` for details and output shape.
+Applies a 2D adaptive average pooling over an input signal composed of
+several input planes.
 
-    Args:
-        output_size: the target output size (single integer or
-            double-integer tuple)
-    """
-    return _functions.thnn.AdaptiveAvgPool2d.apply(input, output_size)
+See :class:`~torch.nn.AdaptiveAvgPool2d` for details and output shape.
 
+Args:
+    output_size: the target output size (single integer or
+        double-integer tuple)
+""")
 
-def adaptive_avg_pool3d(input, output_size):
-    r"""Applies a 3D adaptive average pooling over an input signal composed of
-    several input planes.
+adaptive_avg_pool3d = _add_docstr(torch._C._nn.adaptive_avg_pool3d, r"""
+adaptive_avg_pool3d(input, output_size) -> Variable
 
-    See :class:`~torch.nn.AdaptiveAvgPool3d` for details and output shape.
+Applies a 3D adaptive average pooling over an input signal composed of
+several input planes.
 
-    Args:
-        output_size: the target output size (single integer or
-            triple-integer tuple)
-    """
-    return _functions.thnn.AdaptiveAvgPool3d.apply(input, output_size)
+See :class:`~torch.nn.AdaptiveAvgPool3d` for details and output shape.
+
+Args:
+    output_size: the target output size (single integer or
+        triple-integer tuple)
+""")
 
 
 # Activation functions
@@ -672,7 +681,15 @@ def selu(input, inplace=False):
 
     See :class:`~torch.nn.SELU` for more details.
     """
-    return _functions.thnn.SELU.apply(input, inplace)
+    if inplace:
+        return torch._C._VariableBase.selu_(input)
+    return torch._C._VariableBase.selu(input)
+
+selu_ = _add_docstr(torch._C._VariableBase.selu_, r"""
+selu_(input) -> Variable
+
+In-place verison of :func:`~selu`.
+""")
 
 
 def leaky_relu(input, negative_slope=0.01, inplace=False):
@@ -713,11 +730,11 @@ def rrelu(input, lower=1. / 8, upper=1. / 3, training=False, inplace=False):
     Randomized leaky ReLU.
     """
     if inplace:
-        return torch._C._nn.rrelu_(input, lower, upper, training)
-    return torch._C._nn.rrelu(input, lower, upper, training)
+        return torch._C._VariableBase.rrelu_(input, lower, upper, training)
+    return torch._C._VariableBase.rrelu(input, lower, upper, training)
 
 
-rrelu_ = _add_docstr(torch._C._nn.rrelu_, r"""
+rrelu_ = _add_docstr(torch._C._VariableBase.rrelu_, r"""
 rrelu_(input, lower=1./8, upper=1./3, training=False) -> Variable
 
 In-place version of :func:`~rrelu`.
@@ -900,14 +917,13 @@ def log_softmax(input, dim=None, _stacklevel=3):
     return torch._C._nn.log_softmax(input, dim)
 
 
-def softshrink(input, lambd=0.5):
-    r"""softshrink(input, lambd=0.5) -> Variable
+softshrink = _add_docstr(torch._C._nn.softshrink, r"""
+softshrink(input, lambd=0.5) -> Variable
 
-    Applies the soft shrinkage function elementwise
+Applies the soft shrinkage function elementwise
 
-    See :class:`~torch.nn.Softshrink` for more details.
-    """
-    return _functions.thnn.auto.Softshrink.apply(input, lambd)
+See :class:`~torch.nn.Softshrink` for more details.
+""")
 
 
 def tanh(input):
@@ -1123,8 +1139,10 @@ def batch_norm(input, running_mean, running_var, weight=None, bias=None,
         size = list(input.size())
         if reduce(mul, size[2:], size[0]) == 1:
             raise ValueError('Expected more than 1 value per channel when training, got input size {}'.format(size))
-    f = torch._C._functions.BatchNorm(running_mean, running_var, training, momentum, eps, torch.backends.cudnn.enabled)
-    return f(input, weight, bias)
+    return torch._C._VariableBase.batch_norm(
+        input, weight, bias,
+        Variable(running_mean), Variable(running_var), training, momentum, eps, torch.backends.cudnn.enabled
+    )
 
 
 # loss
@@ -1136,8 +1154,12 @@ def nll_loss(input, target, weight=None, size_average=True, ignore_index=-100, r
 
     Args:
         input: :math:`(N, C)` where `C = number of classes` or `(N, C, H, W)`
-            in case of 2D - Loss
-        target: :math:`(N)` where each value is `0 <= targets[i] <= C-1`
+            in case of 2D Loss, or `(N, C, *) in the case of K-dimensional Loss,
+            where :math:`K > 2` and `*` is `K` extra dimensions.
+        target: :math:`(N)` where each value is `0 <= targets[i] <= C-1`.
+            In the case of 2D Loss, then :math:`(N, H, W)`. For K-dimensional
+            Loss where :math:`K > 2`, then :math:`(N, *)`, where `*` is `K`
+            extra dimensions.
         weight (Tensor, optional): a manual rescaling weight given to each
             class. If given, has to be a Tensor of size `C`
         size_average (bool, optional): By default, the losses are averaged
@@ -1163,11 +1185,24 @@ def nll_loss(input, target, weight=None, size_average=True, ignore_index=-100, r
         return torch._C._nn.nll_loss(input, target, weight, size_average, ignore_index, reduce)
     elif dim == 4:
         return torch._C._nn.nll_loss2d(input, target, weight, size_average, ignore_index, reduce)
+    elif dim > 4:
+        n = input.size(0)
+        c = input.size(1)
+        out_size = (n,) + input.size()[2:]
+        if target.size()[1:] != input.size()[2:]:
+            raise ValueError('Expected target size {}, got {}'.format(
+                out_size, input.size()))
+        input = input.contiguous().view(n, c, 1, -1)
+        target = target.contiguous().view(n, 1, -1)
+        if reduce:
+            return torch._C._nn.nll_loss2d(input, target, weight, size_average, ignore_index, reduce)
+        out = torch._C._nn.nll_loss2d(input, target, weight, size_average, ignore_index, reduce)
+        return out.view(out_size)
     else:
-        raise ValueError('Expected 2 or 4 dimensions (got {})'.format(dim))
+        raise ValueError('Expected 2, 4, or more than 4 dimensions (got {})'.format(dim))
 
 
-def poisson_nll_loss(input, target, log_input=True, full=False, size_average=True, eps=1e-8):
+def poisson_nll_loss(input, target, log_input=True, full=False, size_average=True, eps=1e-8, reduce=True):
     r"""Poisson negative log likelihood loss.
 
     See :class:`~torch.nn.PoissonNLLLoss` for details.
@@ -1186,6 +1221,10 @@ def poisson_nll_loss(input, target, log_input=True, full=False, size_average=Tru
             the losses are instead summed for each minibatch. Default: ``True``
         eps (float, optional): Small value to avoid evaluation of log(0) when
             log_input=False. Default: 1e-8
+        reduce (bool, optional): By default, the losses are averaged
+            over observations for each minibatch, or summed, depending on
+            size_average. When reduce is ``False``, returns a loss per batch
+            element instead and ignores size_average. Default: ``True``
     """
     if log_input:
         loss = torch.exp(input) - target * input
@@ -1194,10 +1233,11 @@ def poisson_nll_loss(input, target, log_input=True, full=False, size_average=Tru
     if full:
         mask = target > 1
         loss[mask] += (target * torch.log(target) - target + 0.5 * torch.log(2 * math.pi * target))[mask]
+    if not reduce:
+        return loss
     if size_average:
         return torch.mean(loss)
-    else:
-        return torch.sum(loss)
+    return torch.sum(loss)
 
 
 kl_div = _add_docstr(torch._C._nn.kl_div, r"""
@@ -1254,7 +1294,7 @@ def cross_entropy(input, target, weight=None, size_average=True, ignore_index=-1
     return nll_loss(log_softmax(input, 1), target, weight, size_average, ignore_index, reduce)
 
 
-def binary_cross_entropy(input, target, weight=None, size_average=True):
+def binary_cross_entropy(input, target, weight=None, size_average=True, reduce=True):
     r"""Function that measures the Binary Cross Entropy
     between the target and the output.
 
@@ -1269,6 +1309,10 @@ def binary_cross_entropy(input, target, weight=None, size_average=True):
                 over observations for each minibatch. However, if the field
                 sizeAverage is set to False, the losses are instead summed
                 for each minibatch. Default: ``True``
+        reduce (bool, optional): By default, the losses are averaged or summed over
+                observations for each minibatch depending on size_average. When reduce
+                is False, returns a loss per batch element instead and ignores
+                size_average. Default: True
 
     Examples::
 
@@ -1290,7 +1334,7 @@ def binary_cross_entropy(input, target, weight=None, size_average=True):
         if torch.is_tensor(weight):
             weight = Variable(weight)
 
-    return torch._C._nn.binary_cross_entropy(input, target, weight, size_average)
+    return torch._C._nn.binary_cross_entropy(input, target, weight, size_average, reduce)
 
 
 def binary_cross_entropy_with_logits(input, target, weight=None, size_average=True):
@@ -1489,14 +1533,51 @@ def upsample(input, size=None, scale_factor=None, mode='nearest'):
         mode (string): algorithm used for upsampling:
             'nearest' | 'linear' | 'bilinear' | 'trilinear'. Default: 'nearest'
     """
+    from numbers import Integral
+    from .modules.utils import _ntuple
+
+    def _check_size_scale_factor():
+        if size is None and scale_factor is None:
+            raise ValueError('either size or scale_factor should be defined')
+        if size is not None and scale_factor is not None:
+            raise ValueError('only one of size or scale_factor should be defined')
+        if scale_factor is not None and not isinstance(scale_factor, (Integral, tuple)):
+            raise ValueError('scale_factor must be of integer type or a tuple of integer types')
+
+    def _scale_factor(dim):
+        _check_size_scale_factor()
+        if scale_factor is not None and not isinstance(scale_factor, Integral):
+            raise ValueError('scale_factor must be a single Integer value for nearest neighbor sampling')
+        if scale_factor is not None:
+            return scale_factor
+        sizes = _ntuple(dim)(size)
+        computed_scale_factor = sizes[0] // input.size(2)
+        for d in range(dim):
+            if sizes[d] % input.size(d + 2) != 0:
+                raise RuntimeError("output size specified in UpsamplingNearest "
+                                   "({}) has to be divisible by the input size, but got: "
+                                   "{}".format('x'.join(map(str, sizes)),
+                                               'x'.join(map(str, input.size()))))
+            if sizes[d] // input.size(d + 2) != computed_scale_factor:
+                raise RuntimeError("input aspect ratio doesn't match the output ratio")
+
+        return computed_scale_factor
+
+    def _output_size(dim):
+        _check_size_scale_factor()
+        if size is not None:
+            return size
+        scale_factors = _ntuple(dim)(scale_factor)
+        return [input.size(i + 2) * scale_factors[i] for i in range(dim)]
+
     if input.dim() == 3 and mode == 'nearest':
-        return _functions.thnn.UpsamplingNearest1d.apply(input, _single(size), scale_factor)
+        return torch._C._nn.upsample_nearest1d(input, _scale_factor(1))
     elif input.dim() == 4 and mode == 'nearest':
-        return _functions.thnn.UpsamplingNearest2d.apply(input, _pair(size), scale_factor)
+        return torch._C._nn.upsample_nearest2d(input, _scale_factor(2))
     elif input.dim() == 5 and mode == 'nearest':
-        return _functions.thnn.UpsamplingNearest3d.apply(input, _triple(size), scale_factor)
+        return torch._C._nn.upsample_nearest3d(input, _scale_factor(3))
     elif input.dim() == 3 and mode == 'linear':
-        return _functions.thnn.UpsamplingLinear1d.apply(input, _single(size), scale_factor)
+        return torch._C._nn.upsample_linear1d(input, _output_size(1))
     elif input.dim() == 3 and mode == 'bilinear':
         raise NotImplementedError("Got 3D input, but bilinear mode needs 4D input")
     elif input.dim() == 3 and mode == 'trilinear':
@@ -1504,7 +1585,7 @@ def upsample(input, size=None, scale_factor=None, mode='nearest'):
     elif input.dim() == 4 and mode == 'linear':
         raise NotImplementedError("Got 4D input, but linear mode needs 3D input")
     elif input.dim() == 4 and mode == 'bilinear':
-        return _functions.thnn.UpsamplingBilinear2d.apply(input, _pair(size), scale_factor)
+        return torch._C._nn.upsample_bilinear2d(input, _output_size(2))
     elif input.dim() == 4 and mode == 'trilinear':
         raise NotImplementedError("Got 4D input, but trilinear mode needs 5D input")
     elif input.dim() == 5 and mode == 'linear':
@@ -1512,7 +1593,7 @@ def upsample(input, size=None, scale_factor=None, mode='nearest'):
     elif input.dim() == 5 and mode == 'bilinear':
         raise NotImplementedError("Got 5D input, but bilinear mode needs 4D input")
     elif input.dim() == 5 and mode == 'trilinear':
-        return _functions.thnn.UpsamplingTrilinear3d.apply(input, _triple(size), scale_factor)
+        return torch._C._nn.upsample_trilinear3d(input, _output_size(3))
     else:
         raise NotImplementedError("Input Error: Only 3D, 4D and 5D input Tensors supported"
                                   " (got {}D) for the modes: nearest | linear | bilinear | trilinear"
@@ -1653,21 +1734,21 @@ def pad(input, pad, mode='constant', value=0):
     elif input.dim() == 3:
         assert len(pad) == 2, '3D tensors expect 2 values for padding'
         if mode == 'reflect':
-            return _functions.thnn.ReflectionPad1d.apply(input, *pad)
+            return torch._C._nn.reflection_pad1d(input, pad)
         elif mode == 'replicate':
-            return _functions.thnn.ReplicationPad1d.apply(input, *pad)
+            return torch._C._nn.replication_pad1d(input, pad)
     elif input.dim() == 4:
         assert len(pad) == 4, '4D tensors expect 4 values for padding'
         if mode == 'reflect':
-            return _functions.thnn.ReflectionPad2d.apply(input, *pad)
+            return torch._C._nn.reflection_pad2d(input, pad)
         elif mode == 'replicate':
-            return _functions.thnn.ReplicationPad2d.apply(input, *pad)
+            return torch._C._nn.replication_pad2d(input, pad)
     elif input.dim() == 5:
         assert len(pad) == 6, '5D tensors expect 6 values for padding'
         if mode == 'reflect':
             raise NotImplementedError
         elif mode == 'replicate':
-            return _functions.thnn.ReplicationPad3d.apply(input, *pad)
+            return torch._C._nn.replication_pad3d(input, pad)
     else:
         raise NotImplementedError("Only 3D, 4D, 5D padding with non-constant padding are supported for now")
 

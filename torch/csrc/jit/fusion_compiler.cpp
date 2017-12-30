@@ -1,3 +1,4 @@
+#ifndef _WIN32
 #include "torch/csrc/jit/fusion_compiler.h"
 #include "torch/csrc/jit/ir.h"
 #include "torch/csrc/jit/code_template.h"
@@ -29,6 +30,7 @@ std::unordered_map<NodeKind, std::string> simple_map_ops = {
   {klog1p, "log1pf(${0})"},
   {klgamma, "lgammaf(${0})"},
   {kexp, "expf(${0})"},
+  {kexpm1, "expm1f(${0})"},
   {kcos, "cosf(${0})"},
   {kacos, "acosf(${0})"},
   {kcosh, "coshf(${0})"},
@@ -149,8 +151,9 @@ auto cpu_compilation_unit_template = CodeTemplate(R"(
 #include <iostream>
 ${type_declarations}
 
+#define OMP_THRESHOLD 100000
 static void ${kernelName}_kernel(IndexType totalElements, ${formals}) {
-  // TODO: parallelize with something reasonable
+  #pragma omp parallel for if(totalElements > OMP_THRESHOLD)
   for (IndexType linearIndex = 0;
         linearIndex < totalElements;
         linearIndex += 1) {
@@ -625,16 +628,31 @@ private:
 static const std::string so_template = "/tmp/pytorch_fuserXXXXXX.so";
 static const std::string cpp_template = "/tmp/pytorch_fuserXXXXXX.cpp";
 
+// NB: -march=native not supported on PPC64 g++.  It's a bit annoying
+// to do a configure-style test to decide whether or not the g++
+// actually supports it or not, so we heuristically use the host
+// compiler to predict if the runtime compiler supports the option we
+// want.  This probably won't work if you're cross-compiling.
 static const std::string compile_string =
-  "\"${cxx}\" -O3 -g -march=native -std=c++11 -fPIC -shared \"${cpp_file}\" -o \"${so_file}\"";
+  "\"${cxx}\" -O3 -g "
+#ifndef __PPC64__ 
+  "-march=native "
+#endif 
+  "-std=c++11 -fPIC ${fopenmp} -shared \"${cpp_file}\" -o \"${so_file}\"";
 
 static void runCompiler(FusionCompilerConfig & config, const std::string & cpp_file, const std::string & so_file) {
   TemplateEnv env;
   env.s("cxx", config.cxx);
+  env.s("fopenmp", config.openmp ? "-fopenmp" : "");
   env.s("cpp_file",cpp_file);
   env.s("so_file",so_file);
   std::string result = format(compile_string,env);
   int r = system(result.c_str());
+  if(config.openmp && r != 0) {
+    std::cerr << "warning: pytorch jit fuser failed to compile with openmp, trying without it...\n";
+    config.openmp = false; // disable for future compiles
+    return runCompiler(config, cpp_file, so_file);
+  }
   JIT_ASSERT(r == 0);
 }
 
@@ -780,3 +798,61 @@ FusionCompiler & sharedFusionCompiler() {
 }
 
 }}
+
+# else
+// dummy implementations for windows
+
+#include "torch/csrc/jit/fusion_compiler.h"
+#include "torch/csrc/jit/ir.h"
+#include "torch/csrc/jit/code_template.h"
+#include "torch/csrc/jit/resource_guard.h"
+#include "torch/csrc/utils/disallow_copy.h"
+#include "ATen/ATen.h"
+#ifdef WITH_CUDA
+#include "torch/csrc/cuda/cuda_check.h"
+#include <nvrtc.h>
+#include <cuda.h>
+#include <cuda_runtime.h>
+#endif
+#include <string>
+#include <algorithm>
+#include <unordered_map>
+#include <vector>
+#include <sstream>
+#include <iostream>
+
+namespace torch { namespace jit {
+
+CompiledFusionFunction::CompiledFusionFunction(const std::string & name, AnnotatedGraph & agraph) {}
+
+void CompiledFusionFunction::launch_with_tensors(at::ArrayRef<at::Tensor> inputs, at::ArrayRef<at::Tensor> outputs) {}
+
+void CompiledFusionFunction::launch(at::ArrayRef<at::Tensor> inputs, std::vector<at::Tensor> & outputs) {}
+
+std::shared_ptr<CompiledFusionFunction> FusionCompiler::getOrCompile(AnnotatedGraph & agraph) {
+  return nullptr;
+}
+
+std::shared_ptr<CompiledFusionFunction> FusionCompiler::getOrCompile(Node* fusion_group) {
+  return nullptr;
+}
+
+
+std::shared_ptr<CompiledFusionFunction> FusionCompiler::getOrCompile(Graph & graph,
+                                                     bool is_cuda,
+                                                     at::ArrayRef<at::Tensor> inputs,
+                                                     at::ArrayRef<at::Tensor> outputs) {
+  return nullptr;
+}
+
+void FusionCompiler::debugLaunchGraph(Graph & graph, bool is_cuda, at::ArrayRef<at::Tensor> inputs, at::ArrayRef<at::Tensor> outputs) {}
+
+FusionCompiler::FusionCompiler() {}
+
+FusionCompiler & sharedFusionCompiler() {
+  throw std::runtime_error("NYI: fuser is not supported on Windows.");
+}
+
+}}
+
+# endif

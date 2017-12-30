@@ -19,14 +19,50 @@ Probability distributions - torch.distributions
 .. autoclass:: Bernoulli
     :members:
 
+:hidden:`Beta`
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: Beta
+    :members:
+
 :hidden:`Categorical`
 ~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: Categorical
     :members:
 
+:hidden:`Cauchy`
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: Cauchy
+    :members:
+
+:hidden:`Dirichlet`
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: Dirichlet
+    :members:
+
+:hidden:`Gamma`
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: Gamma
+    :members:
+
 :hidden:`Normal`
 ~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: Normal
+    :members:
+
+:hidden:`OneHotCategorical`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: OneHotCategorical
+    :members:
+
+:hidden:`Uniform`
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: Uniform
     :members:

@@ -254,6 +254,20 @@ bmm(batch2) -> Tensor
 See :func:`torch.bmm`
 """)
 
+add_docstr_all('btrifact',
+               r"""
+btrifact(info=None, pivot=True) -> (Tensor, Tensor)
+
+See :func:`torch.btrifact`
+""")
+
+add_docstr_all('btrifact_with_info',
+               r"""
+btrifact_with_info(pivot=True) -> (Tensor, Tensor, Tensor)
+
+See :func:`torch.btrifact_with_info`
+""")
+
 add_docstr_all('cauchy_',
                r"""
 cauchy_(median=0, sigma=1, *, generator=None) -> Tensor
@@ -499,6 +513,20 @@ exp_() -> Tensor
 In-place version of :meth:`~Tensor.exp`
 """)
 
+add_docstr_all('expm1',
+               r"""
+expm1() -> Tensor
+
+See :func:`torch.expm1`
+""")
+
+add_docstr_all('expm1_',
+               r"""
+expm1_() -> Tensor
+
+In-place version of :meth:`~Tensor.expm1`
+""")
+
 add_docstr_all('exponential_',
                r"""
 exponential_(lambd=1, *, generator=None) -> Tensor
@@ -657,8 +685,13 @@ add_docstr_all('index_add_',
 index_add_(dim, index, tensor) -> Tensor
 
 Accumulate the elements of :attr:`tensor` into the :attr:`self` tensor by adding
-to the indices in the order given in :attr:`index`. The shape of :attr:`tensor'
-must exactly match the elements indexed or an error will be raised.
+to the indices in the order given in :attr:`index`. For example, if ``dim == 0``
+and ``index[i] == j``, then the ``i``\ th row of :attr:`tensor` is added to the
+``j``\ th row of :attr:`self`.
+
+The :attr:`dim`\ th dimension of :attr:`tensor` must have the same size as the
+length of :attr:`index` (which must be a vector), and all other dimensions must
+match :attr:`self`, or an error will be raised.
 
 Args:
     dim (int): dimension along which to index
@@ -666,15 +699,17 @@ Args:
     tensor (Tensor): the tensor containing values to add
 
 Example:
-    >>> x = torch.Tensor([[1, 1, 1], [1, 1, 1], [1, 1, 1]])
+    >>> x = torch.Tensor(5, 3).fill_(1)
     >>> t = torch.Tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
-    >>> index = torch.LongTensor([0, 2, 1])
+    >>> index = torch.LongTensor([0, 4, 2])
     >>> x.index_add_(0, index, t)
     >>> x
       2   3   4
+      1   1   1
       8   9  10
+      1   1   1
       5   6   7
-    [torch.FloatTensor of size 3x3]
+    [torch.FloatTensor of size 5x3]
 """)
 
 add_docstr_all('index_copy_',
@@ -682,8 +717,13 @@ add_docstr_all('index_copy_',
 index_copy_(dim, index, tensor) -> Tensor
 
 Copies the elements of :attr:`tensor` into the :attr:`self` tensor by selecting
-the indices in the order given in index. The shape of :attr:`tensor` must
-exactly match the elements indexed or an error will be raised.
+the indices in the order given in :attr:`index`. For example, if ``dim == 0``
+and ``index[i] == j``, then the ``i``\ th row of :attr:`tensor` is copied to the
+``j``\ th row of :attr:`self`.
+
+The :attr:`dim`\ th dimension of :attr:`tensor` must have the same size as the
+length of :attr:`index` (which must be a vector), and all other dimensions must
+match :attr:`self`, or an error will be raised.
 
 Args:
     dim (int): dimension along which to index
@@ -691,15 +731,17 @@ Args:
     tensor (Tensor): the tensor containing values to copy
 
 Example:
-    >>> x = torch.Tensor(3, 3)
+    >>> x = torch.zeros(5, 3)
     >>> t = torch.Tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
-    >>> index = torch.LongTensor([0, 2, 1])
+    >>> index = torch.LongTensor([0, 4, 2])
     >>> x.index_copy_(0, index, t)
     >>> x
      1  2  3
+     0  0  0
      7  8  9
+     0  0  0
      4  5  6
-    [torch.FloatTensor of size 3x3]
+    [torch.FloatTensor of size 5x3]
 """)
 
 add_docstr_all('index_fill_',
@@ -1789,8 +1831,18 @@ Returns a new tensor with the same data as the :attr:`self` tensor but of a
 different size.
 
 The returned tensor shares the same data and must have the same number
-of elements, but may have a different size. A tensor must be
-:func:`contiguous` to be viewed.
+of elements, but may have a different size. For a tensor to be viewed, the new
+view size must be compatible with its original size and stride, i.e., each new
+view dimension must either be a subspace of an original dimension, or only span
+across original dimensions :math:`d, d+1, \dots, d+k` that satisfy the following
+contiguity-like condition that :math:`\forall i = 0, \dots, k-1`,
+
+.. math::
+
+  stride[i] = stride[i+1] \times size[i+1]
+
+Otherwise, :func:`contiguous` needs to be called before the tensor can be
+viewed.
 
 Args:
     args (torch.Size or int...): the desired size

@@ -1,6 +1,6 @@
 # Loss functions
 
-- name: binary_cross_entropy(Tensor self, Tensor target, Tensor weight={}, bool size_average=true)
+- name: binary_cross_entropy(Tensor self, Tensor target, Tensor weight={}, bool size_average=true, bool reduce=true)
   cname: BCECriterion
 
 - name: kl_div(Tensor self, Tensor target, bool size_average=true, bool reduce=true)
@@ -35,7 +35,7 @@
 
 # Activation functions
 
-- name: elu(Tensor self, Scalar alpha=1)
+- name: elu(Tensor self, Scalar alpha=1, Scalar scale=1)
   cname: ELU
   has_inplace: True
 
@@ -67,9 +67,10 @@
 - name: prelu(Tensor self, Tensor weight)
   cname: PReLU
 
-- name: rrelu(Tensor self, Scalar lower=0.125, Scalar upper=0.3333333333333333, bool training=false, Generator* generator=nullptr)
+# NOTE: we treat noise as an input (it's really a buffer) because the codegen
+# can't handle in-place functions that have buffers
+- name: rrelu_with_noise(Tensor self, Tensor noise, Scalar lower=0.125, Scalar upper=0.3333333333333333, bool training=false, Generator* generator=nullptr)
   cname: RReLU
-  buffers: [noise]
   has_inplace: True
 
 - name: softmax(Tensor self, int64_t dim)
@@ -89,8 +90,17 @@
 
 # Pooling
 
+- name: adaptive_avg_pool2d(Tensor self, IntList[2] output_size)
+  cname: SpatialAdaptiveAveragePooling
+
+- name: adaptive_avg_pool3d(Tensor self, IntList[3] output_size)
+  cname: VolumetricAdaptiveAveragePooling
+
 - name: adaptive_max_pool2d(Tensor self, IntList[2] output_size)
   cname: SpatialAdaptiveMaxPooling
+
+- name: adaptive_max_pool3d(Tensor self, IntList[3] output_size)
+  cname: VolumetricAdaptiveMaxPooling
 
 - name: avg_pool2d(Tensor self, IntList[2] kernel_size, IntList[2] stride={}, IntList[2] padding=0, bool ceil_mode=false, bool count_include_pad=false)
   cname: SpatialAveragePooling
@@ -102,12 +112,15 @@
   default_init:
     stride: kernel_size
 
+- name: fractional_max_pool2d(Tensor self, IntList[2] kernel_size, IntList[2] output_size, Tensor random_samples)
+  cname: SpatialFractionalMaxPooling
+
 - name: max_pool2d(Tensor self, IntList[2] kernel_size, IntList[2] stride={}, IntList[2] padding=0, IntList[2] dilation=1, bool ceil_mode=false)
   cname: SpatialDilatedMaxPooling
   default_init:
     stride: kernel_size
 
-- name: max_pool3d(Tensor self, IntList[3] kernel_size, IntList[3] stride={}, IntList[3] padding=0, IntList[2] dilation=1, bool ceil_mode=false)
+- name: max_pool3d(Tensor self, IntList[3] kernel_size, IntList[3] stride={}, IntList[3] padding=0, IntList[3] dilation=1, bool ceil_mode=false)
   cname: VolumetricDilatedMaxPooling
   default_init:
     stride: kernel_size
@@ -117,6 +130,47 @@
 
 - name: max_unpool3d(Tensor self, LongTensor indices, IntList[3] output_size, IntList[3] stride, IntList[3] padding)
   cname: VolumetricMaxUnpooling
+
+# Padding
+
+- name: reflection_pad1d(Tensor self, IntList[2] padding)
+  cname: TemporalReflectionPadding
+
+- name: reflection_pad2d(Tensor self, IntList[4] padding)
+  cname: SpatialReflectionPadding
+
+- name: replication_pad1d(Tensor self, IntList[2] padding)
+  cname: TemporalReplicationPadding
+
+- name: replication_pad2d(Tensor self, IntList[4] padding)
+  cname: SpatialReplicationPadding
+
+- name: replication_pad3d(Tensor self, IntList[6] padding)
+  cname: VolumetricReplicationPadding
+
+# Upsampling
+
+# Note: The upsampling backwards functions also include an IntList input_size
+# parameter, which is added by nn_parse.py
+
+- name: upsample_linear1d(Tensor self, IntList[1] output_size)
+  cname: TemporalUpSamplingLinear
+
+- name: upsample_bilinear2d(Tensor self, IntList[2] output_size)
+  cname: SpatialUpSamplingBilinear
+
+- name: upsample_trilinear3d(Tensor self, IntList[3] output_size)
+  cname: VolumetricUpSamplingTrilinear
+
+- name: upsample_nearest1d(Tensor self, int64_t scale_factor)
+  cname: TemporalUpSamplingNearest
+
+- name: upsample_nearest2d(Tensor self, int64_t scale_factor)
+  cname: SpatialUpSamplingNearest
+
+- name: upsample_nearest3d(Tensor self, int64_t scale_factor)
+  cname: VolumetricUpSamplingNearest
+
 
 # Private functions. These also exist in TH, but we want the backwards functions
 # to implement derivatives.
@@ -129,36 +183,42 @@
 
 # Batch normalization
 
-- name: batch_norm(Tensor self, Tensor weight, Tensor bias, Tensor running_mean, Tensor running_var, bool training, double momentum, double eps)
+# The buffers here are somewhat hazardous, because their type will be
+# based off of self, even though you may plausibly wish running_mean
+# and running_var to have different precision than self (e.g.,
+# BatchNorm on half).  Fortunately, THNN doesn't actually ever do this,
+# so the buffer allocation code is "correct".  If you ever do fix this,
+# you should just port the function entirely to a native ATen function.
+- name: thnn_batch_norm(Tensor self, Tensor weight, Tensor bias, Tensor running_mean, Tensor running_var, bool training, double momentum, double eps)
   cname: BatchNormalization
   buffers: [save_mean, save_std]
 
 # Convolutions
 
-- name: conv_transpose2d(Tensor self, Tensor weight, IntList[2] kernel_size, Tensor bias={}, IntList[2] stride=1, IntList[2] padding=0, IntList[2] output_padding=0, IntList[2] dilation=1)
+- name: thnn_conv_transpose2d(Tensor self, Tensor weight, IntList[2] kernel_size, Tensor bias={}, IntList[2] stride=1, IntList[2] padding=0, IntList[2] output_padding=0, IntList[2] dilation=1)
   cname: SpatialFullDilatedConvolution
   buffers: [columns, ones]
 
-- name: conv_transpose3d(Tensor self, Tensor weight, Tensor bias={}, IntList[3] stride=1, IntList[3] padding=0, IntList[3] output_padding=0, IntList[3] dilation=1)
+- name: thnn_conv_transpose3d(Tensor self, Tensor weight, Tensor bias={}, IntList[3] stride=1, IntList[3] padding=0, IntList[3] output_padding=0, IntList[3] dilation=1)
   cname: VolumetricFullDilatedConvolution
   buffers: [finput, fgrad_input]
 
-- name: conv2d(Tensor self, Tensor weight, IntList[2] kernel_size, Tensor bias={}, IntList[2] stride=1, IntList[2] padding=0)
+- name: thnn_conv2d(Tensor self, Tensor weight, IntList[2] kernel_size, Tensor bias={}, IntList[2] stride=1, IntList[2] padding=0)
   cname: SpatialConvolutionMM
   buffers: [finput, fgrad_input]
 
-- name: conv_depthwise2d(Tensor self, Tensor weight, IntList[2] kernel_size, Tensor bias={}, IntList[2] stride=1, IntList[2] padding=0, IntList[2] dilation=1)
+- name: thnn_conv_depthwise2d(Tensor self, Tensor weight, IntList[2] kernel_size, Tensor bias={}, IntList[2] stride=1, IntList[2] padding=0, IntList[2] dilation=1)
   cname: SpatialDepthwiseConvolution
   buffers: []
 
-- name: conv3d(Tensor self, Tensor weight, IntList[3] kernel_size, Tensor bias={}, IntList[3] stride=1, IntList[3] padding=0)
+- name: thnn_conv3d(Tensor self, Tensor weight, IntList[3] kernel_size, Tensor bias={}, IntList[3] stride=1, IntList[3] padding=0)
   cname: VolumetricConvolutionMM
   buffers: [finput, fgrad_input]
 
-- name: conv_dilated2d(Tensor self, Tensor weight, IntList[2] kernel_size, Tensor bias={}, IntList[2] stride=1, IntList[2] padding=0, IntList[2] dilation=1)
+- name: thnn_conv_dilated2d(Tensor self, Tensor weight, IntList[2] kernel_size, Tensor bias={}, IntList[2] stride=1, IntList[2] padding=0, IntList[2] dilation=1)
   cname: SpatialDilatedConvolution
   buffers: [columns, ones]
 
-- name: conv_dilated3d(Tensor self, Tensor weight, IntList[3] kernel_size, Tensor bias={}, IntList[3] stride=1, IntList[3] padding=0, IntList[3] dilation=1)
+- name: thnn_conv_dilated3d(Tensor self, Tensor weight, IntList[3] kernel_size, Tensor bias={}, IntList[3] stride=1, IntList[3] padding=0, IntList[3] dilation=1)
   cname: VolumetricDilatedConvolution
   buffers: [columns, ones]

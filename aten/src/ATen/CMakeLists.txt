@@ -36,7 +36,7 @@ IF(C_AVX2_FOUND)
   ENDIF(MSVC)
 ENDIF(C_AVX2_FOUND)
 
-IF(NOT MSVC)
+IF(NOT MSVC AND NOT "${CMAKE_C_COMPILER_ID}" MATCHES "Clang")
   SET_SOURCE_FILES_PROPERTIES(${PROJECT_SOURCE_DIR}/src/TH/THAtomic.c PROPERTIES COMPILE_FLAGS "-fno-openmp")
   SET_SOURCE_FILES_PROPERTIES(${PROJECT_SOURCE_DIR}/src/TH/THAllocator.c PROPERTIES COMPILE_FLAGS "-fno-openmp")
 ENDIF()
@@ -94,11 +94,14 @@ CONFIGURE_FILE(Config.h.in "${CMAKE_CURRENT_SOURCE_DIR}/Config.h")
 FILE(GLOB base_h RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.h")
 FILE(GLOB base_cpp RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.cpp")
 FILE(GLOB native_cpp RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "native/*.cpp")
+FILE(GLOB native_cudnn_cpp RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "native/cudnn/*.cpp")
+FILE(GLOB native_cuda_cu RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "native/cuda/*.cu")
 
-FILE(GLOB cudnn_h RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "cudnn/*.h")
 FILE(GLOB cudnn_cpp RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "cudnn/*.cpp")
 
 FILE(GLOB all_python RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.py")
+
+FILE(GLOB_RECURSE aten_cuda_cu RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "cuda/*.cu")
 
 IF(DEFINED ENV{PYTORCH_PYTHON})
   message(STATUS "Using python found in $ENV{PYTORCH_PYTHON}")
@@ -140,15 +143,15 @@ ADD_CUSTOM_TARGET(aten_files_are_generated
 )
 
 
-SET(all_cpp ${base_cpp} ${native_cpp} ${generated_cpp} ${ATen_CPU_SRCS})
+SET(all_cpp ${base_cpp} ${native_cpp} ${native_cudnn_cpp} ${generated_cpp} ${ATen_CPU_SRCS})
 
 INCLUDE_DIRECTORIES(${ATen_CPU_INCLUDE})
 IF(NOT NO_CUDA)
   INCLUDE_DIRECTORIES(${ATen_CUDA_INCLUDE})
   INCLUDE_DIRECTORIES("${CUDA_SDK_ROOT_DIR}/common/inc")
   INCLUDE_DIRECTORIES("${CMAKE_CURRENT_SOURCE_DIR}/cuda")
-  SET(native_functions_cuda ${CMAKE_CURRENT_SOURCE_DIR}/native/cuda/NativeFunctionsCuda.cu)
-  SET(all_cpp ${all_cpp} ${ATen_CUDA_SRCS} ${native_functions_cuda})
+  SET(ATen_CUDA_SRCS ${ATen_CUDA_SRCS} ${aten_cuda_cu} ${native_cuda_cu})
+  SET(all_cpp ${all_cpp} ${ATen_CUDA_SRCS})
   IF(CUDNN_FOUND)
     SET(all_cpp ${all_cpp} ${cudnn_cpp})
   ENDIF()
@@ -247,6 +250,10 @@ IF(CUDA_FOUND)
     target_link_libraries(ATen ${CUDNN_LIBRARIES})
   endif(CUDNN_FOUND)
 
+  if (NNPACK_FOUND)
+    target_link_libraries(ATen ${NNPACK_LIBRARIES})
+  endif(NNPACK_FOUND)
+
   IF(USE_MAGMA)
     TARGET_LINK_LIBRARIES(ATen ${MAGMA_LIBRARIES})
     IF ($ENV{TH_BINARY_BUILD})
@@ -282,9 +289,6 @@ INSTALL(FILES "${CMAKE_CURRENT_BINARY_DIR}/cmake-exports/ATenConfig.cmake"
 
 FOREACH(HEADER ${base_h})
   INSTALL(FILES ${HEADER} DESTINATION ${AT_INSTALL_INCLUDE_DIR}/ATen)
-ENDFOREACH()
-FOREACH(HEADER ${cudnn_h})
-  INSTALL(FILES ${HEADER} DESTINATION ${AT_INSTALL_INCLUDE_DIR}/ATen/cudnn)
 ENDFOREACH()
 FOREACH(HEADER ${generated_h})
   INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/${HEADER}

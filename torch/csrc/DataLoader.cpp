@@ -1,8 +1,3 @@
-#include <sys/wait.h>
-#include <map>
-#include <set>
-#include <atomic>
-#include <signal.h>
 #include "THP.h"
 
 // In cases like DataLoader, if a worker process die due to bus error/segfault
@@ -19,6 +14,13 @@
 
 #ifndef _WIN32
 
+#include <sys/wait.h>
+#include <map>
+#include <set>
+#include <atomic>
+#include <signal.h>
+
+
 // Critical signal handlers should be registered on worker processes before
 // doing work.
 // The handler will raise default handler so that the kill information will be
@@ -27,7 +29,8 @@
 #define SIGNAL_HANDLER(SIGNAL, HANDLER_NAME, ERROR_MSG)                       \
 static void HANDLER_NAME(int sig, siginfo_t *info, void *ctx)                 \
 {                                                                             \
-  write(STDERR_FILENO, ERROR_MSG, sizeof(ERROR_MSG) / sizeof(char));          \
+  auto _w = write(STDERR_FILENO, ERROR_MSG, sizeof(ERROR_MSG) / sizeof(char));\
+  (void)_w;                                                                   \
   struct sigaction sa;                                                        \
   sa.sa_handler = SIG_DFL;                                                    \
   sa.sa_flags = 0;                                                            \
@@ -164,7 +167,7 @@ PyObject *THPModule_removeWorkerPIDs(PyObject *module, PyObject *_ignored) {
     Py_RETURN_NONE;
 }
 
-PyObject *THPModule_exitIfAnyWorkerFails(PyObject *module, PyObject *_ignored) {
+PyObject *THPModule_errorIfAnyWorkerFails(PyObject *module, PyObject *_ignored) {
     Py_RETURN_NONE;
 }
 

@@ -40,6 +40,7 @@ _(Scale) \
 _(Transpose) \
 _(Reshape) \
 _(split) \
+_(chunk) \
 _(Offset) \
 _(value) \
 _(Subgraph) \
@@ -95,6 +96,7 @@ _(div) \
 _(eq) \
 _(equal) \
 _(exp) \
+_(expm1) \
 _(floor) \
 _(fmod) \
 _(frac) \

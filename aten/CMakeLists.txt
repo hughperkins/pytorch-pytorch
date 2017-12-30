@@ -70,6 +70,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 
 LIST(APPEND CUDA_NVCC_FLAGS -Wno-deprecated-gpu-targets)
+LIST(APPEND CUDA_NVCC_FLAGS --expt-extended-lambda)
 
 if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   SET(CMAKE_CXX_STANDARD 11)
@@ -123,15 +124,21 @@ IF (APPLE AND CMAKE_COMPILER_IS_GNUCC)
   ENDIF ()
 ENDIF ()
 
-IF (WITH_OPENMP)
+IF (WITH_OPENMP AND NOT CHECKED_OPENMP)
   FIND_PACKAGE(OpenMP)
-  IF(OPENMP_FOUND)
-    MESSAGE(STATUS "Compiling with OpenMP support")
-    SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-    SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
-  ENDIF(OPENMP_FOUND)
-ENDIF (WITH_OPENMP)
+  SET(CHECKED_OPENMP ON CACHE BOOL "already checked for OpenMP")
+  
+  # OPENMP_FOUND is not cached in FindOpenMP.cmake (all other variables are cached)
+  # see https://github.com/Kitware/CMake/blob/master/Modules/FindOpenMP.cmake
+  SET(OPENMP_FOUND ${OPENMP_FOUND} CACHE BOOL "OpenMP Support found")
+ENDIF (WITH_OPENMP AND NOT CHECKED_OPENMP)
+
+IF(OPENMP_FOUND)
+  MESSAGE(STATUS "Compiling with OpenMP support")
+  SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+ENDIF(OPENMP_FOUND)
+
 
 SET(CUDA_ATTACH_VS_BUILD_RULE_TO_CUDA_FILE OFF)
 
@@ -157,16 +164,6 @@ IF(CUDA_FOUND AND MAGMA_FOUND)
 ELSE()
   MESSAGE(STATUS "MAGMA not found. Compiling without MAGMA support")
 ENDIF()
-
-find_package(CuDNN)
-IF(NOT CUDNN_FOUND)
-  MESSAGE(STATUS "CuDNN not found. Compiling without CUDNN support")
-  set(AT_CUDNN_ENABLED 0)
-ELSE()
-  INCLUDE_DIRECTORIES(${CUDNN_INCLUDE_DIRS})
-  set(AT_CUDNN_ENABLED 1)
-ENDIF()
-
 
 # ARM specific flags
 FIND_PACKAGE(ARM)
@@ -386,6 +383,29 @@ else()
   add_subdirectory(src/THCS)
 endif()
 
+find_package(CuDNN)
+IF(NOT AT_CUDA_ENABLED OR NOT CUDNN_FOUND)
+  MESSAGE(STATUS "CuDNN not found. Compiling without CuDNN support")
+  set(AT_CUDNN_ENABLED 0)
+ELSE()
+  INCLUDE_DIRECTORIES(${CUDNN_INCLUDE_DIRS})
+  set(AT_CUDNN_ENABLED 1)
+ENDIF()
+
+if(NO_NNPACK)
+  message("disabling NNPACK because NO_NNPACK is set")
+  set(AT_NNPACK_ENABLED 0)
+else()
+  find_package(NNPACK)
+  if(NOT NNPACK_FOUND)
+    MESSAGE(STATUS "NNPACK not found. Compiling without nNPACK support")
+    set(AT_NNPACK_ENABLED 0)
+  ELSE()
+    INCLUDE_DIRECTORIES(${NNPACK_INCLUDE_DIRS})
+    set(AT_NNPACK_ENABLED 1)
+  ENDIF()
+endif()
+
 set(cwrap_files
   ${CMAKE_CURRENT_SOURCE_DIR}/src/ATen/Declarations.cwrap
   ${CMAKE_CURRENT_SOURCE_DIR}/src/THNN/generic/THNN.h
@@ -393,9 +413,6 @@ set(cwrap_files
   ${CMAKE_CURRENT_SOURCE_DIR}/src/ATen/nn.yaml
   ${CMAKE_CURRENT_SOURCE_DIR}/src/ATen/native/native_functions.yaml
 )
-if(CUDNN_FOUND)
-  set(cwrap_files ${cwrap_files} ${CMAKE_CURRENT_SOURCE_DIR}/src/ATen/cudnn/cuDNN.yaml)
-endif()
 
 include_directories(
 ${CMAKE_CURRENT_SOURCE_DIR}/src/THNN

@@ -55,6 +55,33 @@ Context & globalContext() {
   return globalContext_;
 }
 
+// NB: This method is *purely* whether or not a user requested
+// that CuDNN was enabled, it doesn't actually say anything about
+// whether or not CuDNN is actually usable.
+bool Context::userEnabledCuDNN() const {
+  return enabled_cudnn;
+}
+
+void Context::setUserEnabledCuDNN(bool e) {
+  enabled_cudnn = e;
+}
+
+bool Context::deterministicCuDNN() const {
+  return deterministic_cudnn;
+}
+
+void Context::setDeterministicCuDNN(bool b) {
+  deterministic_cudnn = b;
+}
+
+bool Context::benchmarkCuDNN() const {
+  return benchmark_cudnn;
+}
+
+void Context::setBenchmarkCuDNN(bool b) {
+  benchmark_cudnn = b;
+}
+
 bool Context::hasCUDA() const {
 #if AT_CUDA_ENABLED()
   int count;
@@ -72,6 +99,20 @@ bool Context::hasCUDA() const {
 cudaStream_t Context::getCurrentCUDAStream() const {
   return THCState_getCurrentStream(thc_state);
 }
+struct cudaDeviceProp* Context::getCurrentDeviceProperties() const {
+  return THCState_getCurrentDeviceProperties(thc_state);
+}
 #endif
+
+int64_t Context::current_device() const {
+#if AT_CUDA_ENABLED()
+  int device;
+  cudaError_t err = cudaGetDevice(&device);
+  if (err == cudaSuccess) {
+    return device;
+  }
+#endif
+  return -1;
+}
 
 }

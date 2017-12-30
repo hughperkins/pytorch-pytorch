@@ -19,8 +19,7 @@ from tools.setup_helpers.cuda import WITH_CUDA, CUDA_HOME, CUDA_VERSION
 from tools.setup_helpers.cudnn import WITH_CUDNN, CUDNN_LIB_DIR, CUDNN_INCLUDE_DIR
 from tools.setup_helpers.nccl import WITH_NCCL, WITH_SYSTEM_NCCL, NCCL_LIB_DIR, \
     NCCL_INCLUDE_DIR, NCCL_ROOT_DIR, NCCL_SYSTEM_LIB
-from tools.setup_helpers.nnpack import WITH_NNPACK, NNPACK_LIB_PATHS, \
-    NNPACK_INCLUDE_DIRS
+from tools.setup_helpers.nnpack import WITH_NNPACK
 from tools.setup_helpers.nvtoolext import NVTOOLEXT_HOME
 from tools.setup_helpers.split_types import split_types
 from tools.setup_helpers.generate_code import generate_code
@@ -117,17 +116,20 @@ def build_libs(libs):
         build_libs_cmd = ['bash', 'torch/lib/build_libs.sh']
     my_env = os.environ.copy()
     my_env["PYTORCH_PYTHON"] = sys.executable
-    if WITH_NINJA:
-        my_env["CMAKE_GENERATOR"] = '-GNinja'
-        my_env["CMAKE_INSTALL"] = 'ninja install'
-    else:
-        my_env['CMAKE_GENERATOR'] = ''
-        my_env['CMAKE_INSTALL'] = 'make install'
+    if not IS_WINDOWS:
+        if WITH_NINJA:
+            my_env["CMAKE_GENERATOR"] = '-GNinja'
+            my_env["CMAKE_INSTALL"] = 'ninja install'
+        else:
+            my_env['CMAKE_GENERATOR'] = ''
+            my_env['CMAKE_INSTALL'] = 'make install'
     if WITH_SYSTEM_NCCL:
         my_env["NCCL_ROOT_DIR"] = NCCL_ROOT_DIR
     if WITH_CUDA:
         my_env["CUDA_BIN_PATH"] = CUDA_HOME
         build_libs_cmd += ['--with-cuda']
+    if WITH_NNPACK:
+        build_libs_cmd += ['--with-nnpack']
     if WITH_CUDNN:
         my_env["CUDNN_LIB_DIR"] = CUDNN_LIB_DIR
         my_env["CUDNN_INCLUDE_DIR"] = CUDNN_INCLUDE_DIR
@@ -287,13 +289,6 @@ class build_ext(build_ext_parent):
         else:
             print('-- Building without distributed package')
 
-        # Do we actually need this here?
-        if WITH_NNPACK:
-            nnpack_dir = NNPACK_LIB_PATHS[0]
-            print('-- Detected NNPACK at ' + nnpack_dir)
-        else:
-            print('-- Not using NNPACK')
-
         generate_code(ninja_global)
 
         if IS_WINDOWS:
@@ -369,6 +364,10 @@ if IS_WINDOWS:
                           # structured exception handling (SEH)
                           # /DNOMINMAX removes builtin min/max functions
                           ]
+    if sys.version_info[0] == 2:
+        # /bigobj increases number of sections in .obj file, which is needed to link
+        # against libaries in Python 2.7 under Windows
+        extra_compile_args.append('/bigobj')
 else:
     extra_compile_args = ['-std=c++11', '-Wno-write-strings',
                           # Python 2.6 requires -fno-strict-aliasing, see
@@ -441,7 +440,9 @@ main_sources = [
     "torch/csrc/utils/object_ptr.cpp",
     "torch/csrc/utils/python_arg_parser.cpp",
     "torch/csrc/utils/tensor_list.cpp",
+    "torch/csrc/utils/tensor_new.cpp",
     "torch/csrc/utils/tensor_numpy.cpp",
+    "torch/csrc/utils/tensor_types.cpp",
     "torch/csrc/utils/tuple_parser.cpp",
     "torch/csrc/utils/tensor_apply.cpp",
     "torch/csrc/allocators.cpp",
@@ -467,9 +468,11 @@ main_sources = [
     "torch/csrc/jit/passes/common_subexpression_elimination.cpp",
     "torch/csrc/jit/passes/peephole.cpp",
     "torch/csrc/jit/passes/inplace_check.cpp",
+    "torch/csrc/jit/passes/canonicalize.cpp",
     "torch/csrc/jit/passes/onnx/peephole.cpp",
     "torch/csrc/jit/generated/aten_dispatch.cpp",
     "torch/csrc/autograd/init.cpp",
+    "torch/csrc/autograd/grad_mode.cpp",
     "torch/csrc/autograd/engine.cpp",
     "torch/csrc/autograd/function.cpp",
     "torch/csrc/autograd/variable.cpp",
@@ -487,16 +490,12 @@ main_sources = [
     "torch/csrc/autograd/generated/python_variable_methods.cpp",
     "torch/csrc/autograd/generated/python_functions.cpp",
     "torch/csrc/autograd/generated/python_nn_functions.cpp",
-    "torch/csrc/autograd/functions/batch_normalization.cpp",
-    "torch/csrc/autograd/functions/convolution.cpp",
     "torch/csrc/autograd/functions/basic_ops.cpp",
     "torch/csrc/autograd/functions/tensor.cpp",
     "torch/csrc/autograd/functions/accumulate_grad.cpp",
     "torch/csrc/autograd/functions/special.cpp",
     "torch/csrc/autograd/functions/utils.cpp",
     "torch/csrc/autograd/functions/init.cpp",
-    "torch/csrc/autograd/functions/onnx/convolution.cpp",
-    "torch/csrc/autograd/functions/onnx/batch_normalization.cpp",
     "torch/csrc/autograd/functions/onnx/basic_ops.cpp",
     "torch/csrc/onnx/onnx.pb.cpp",
     "torch/csrc/onnx/onnx.cpp",
@@ -589,14 +588,6 @@ if WITH_CUDNN:
     if not IS_WINDOWS:
         extra_link_args.insert(0, '-Wl,-rpath,' + CUDNN_LIB_DIR)
     extra_compile_args += ['-DWITH_CUDNN']
-
-if WITH_NNPACK:
-    include_dirs.extend(NNPACK_INCLUDE_DIRS)
-    main_link_args.extend(NNPACK_LIB_PATHS)
-    main_sources += [
-        "torch/csrc/nnpack/NNPACK.cpp",
-    ]
-    extra_compile_args += ['-DWITH_NNPACK']
 
 if DEBUG:
     if IS_WINDOWS:
@@ -729,7 +720,7 @@ setup(name="torch", version=version,
       cmdclass=cmdclass,
       packages=packages,
       package_data={'torch': [
-          'lib/*.so*', 'lib/*.dylib*', 'lib/*.dll',
+          'lib/*.so*', 'lib/*.dylib*', 'lib/*.dll', 'lib/*.lib',
           'lib/torch_shm_manager',
           'lib/*.h',
           'lib/include/TH/*.h', 'lib/include/TH/generic/*.h',

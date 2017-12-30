@@ -594,6 +594,8 @@ add_docstr(torch._C.cat,
 cat(seq, dim=0, out=None) -> Tensor
 
 Concatenates the given sequence of :attr:`seq` tensors in the given dimension.
+All tensors must either have the same shape (except in the cat dimension) or be
+empty.
 
 :func:`torch.cat` can be seen as an inverse operation for :func:`torch.split`
 and :func:`torch.chunk`
@@ -601,7 +603,9 @@ and :func:`torch.chunk`
 :func:`cat` can be best understood via examples.
 
 Args:
-    seq (sequence of tensors): any python sequence of tensors of the same type
+    seq (sequence of tensors): any python sequence of tensors of the same type.
+        Non-empty tensors provided must have the same shape, except in the
+        cat dimension.
     dim (int, optional): the dimension over which the tensors are concatenated
     out (Tensor, optional): the output tensor
 
@@ -1349,6 +1353,18 @@ Example::
     torch.FloatTensor([1, 2])
 """)
 
+add_docstr(torch._C.expm1,
+           r"""
+expm1(tensor, out=None) -> Tensor
+
+Computes the exponential of each element minus 1.
+
+Example::
+
+    >>> torch.expm1(torch.Tensor([0, math.log(2)]))
+    torch.FloatTensor([0, 1])
+""")
+
 add_docstr(torch._C.eye,
            r"""
 eye(n, m=None, out=None)
@@ -1753,11 +1769,14 @@ index_select(input, dim, index, out=None) -> Tensor
 Returns a new tensor which indexes the :attr:`input` tensor along dimension
 :attr:`dim` using the entries in :attr:`index` which is a `LongTensor`.
 
-The returned tensor has the same number of dimensions as
-the original tensor.
+The returned tensor has the same number of dimensions as the original tensor
+(:attr:`input`).  The :attr:`dim`\ th dimension has the same size as the length
+of :attr:`index`; other dimensions have the same size as in the original tensor.
 
-.. note:: The returned tensor does **not** use the same storage as
-          the original tensor
+.. note:: The returned tensor does **not** use the same storage as the original
+          tensor.  If :attr:`out` has a different shape than expected, we
+          silently change it to the correct shape, reallocating the underlying
+          storage if necessary.
 
 Args:
     input (Tensor): the input tensor
@@ -3702,7 +3721,7 @@ Returns a 1-D tensor of size :math:`\lfloor \frac{end - start}{step} \rfloor + 1
 with values from :attr:`start` to :attr:`end` with step :attr:`step`. Step is
 the gap between two values in the tensor. :math:`x_{i+1} = x_i + step`.
 
-Warning:
+.. warning::
     This function is deprecated in favor of :func:`torch.arange`.
 
 Args:
@@ -4295,16 +4314,15 @@ svd(input, some=True, out=None) -> (Tensor, Tensor, Tensor)
 `U, S, V = torch.svd(A)` returns the singular value decomposition of a
 real matrix `A` of size `(n x m)` such that :math:`A = USV^T`.
 
-`U` is of shape :math:`(n \times \min(n, m))`.
+`U` is of shape :math:`(n \times n)`.
 
-`S` is a diagonal matrix of shape :math:`(\min(n, m) \times \min(n, m))`,
-represented as a vector of size :math:`\min(n, m)` containing the diagonal
-entries.
+`S` is a diagonal matrix of shape :math:`(n \times m)`, represented as a vector
+of size :math:`\min(n, m)` containing the diagonal entries.
 
-`V` is of shape :math:`(m \times \min(n, m))`.
+`V` is of shape :math:`(m \times m)`.
 
-:attr:`some` represents the number of singular values to be computed.
-If `some=True`, it computes some and `some=False` computes all.
+If :attr:`some` is ``True`` (default), the returned `U` and `V` matrices will
+contain only :math:`min(n, m)` orthonormal columns.
 
 .. note:: Irrespective of the original strides, the returned matrix `U`
           will be transposed, i.e. with strides `(1, n)` instead of `(n, 1)`.
@@ -4321,7 +4339,7 @@ If `some=True`, it computes some and `some=False` computes all.
 
 Args:
     input (Tensor): the input 2-D tensor
-    some (bool, optional): controls the number of singular values to be computed
+    some (bool, optional): controls the shape of returned `U` and `V`
     out (tuple, optional): the output tuple of tensors
 
 Example::
@@ -5022,27 +5040,63 @@ Example::
 
 add_docstr(torch._C.btrifact,
            r"""
-btrifact(A, info=None, pivot=True) -> Tensor, IntTensor
+btrifact(A, info=None, pivot=True) -> (Tensor, IntTensor)
 
 Batch LU factorization.
 
-Returns a tuple containing the LU factorization and pivots.
-The optional argument `info` provides information if the
-factorization succeeded for each minibatch example.
-The info values are from dgetrf and a non-zero value indicates an error
-occurred. The specific values are from cublas if cuda is being used, otherwise
-LAPACK. Pivoting is done if pivot is set.
+Returns a tuple containing the LU factorization and pivots. Pivoting is done if
+:attr:`pivot` is set.
+
+The optional argument :attr:`info` stores information if the factorization
+succeeded for each minibatch example. The :attr:`info` is provided as an
+`IntTensor`, its values will be filled from dgetrf and a non-zero value
+indicates an error occurred. Specifically, the values are from cublas if cuda is
+being used, otherwise LAPACK.
+
+.. warning::
+    The :attr:`info` argument is deprecated in favor of :meth:`torch.btrifact_with_info`.
 
 Arguments:
     A (Tensor): the tensor to factor
+    info (IntTensor, optional): an `IntTensor` to store values indicating whether
+        factorization succeeds
+    pivot (bool, optional): controls whether pivoting is done
+
+Returns:
+    A tuple containing factorization and pivots.
 
 Example::
 
     >>> A = torch.randn(2, 3, 3)
-    >>> A_LU = A.btrifact()
+    >>> A_LU, pivots = A.btrifact()
 
 """)
 
+add_docstr(torch._C.btrifact_with_info,
+           r"""
+btrifact_with_info(A, pivot=True) -> (Tensor, IntTensor, IntTensor)
+
+Batch LU factorization with additional error information.
+
+This is a version of :meth:`torch.btrifact` that always creates an info
+`IntTensor`, and returns it as the third return value
+
+Arguments:
+    A (Tensor): the tensor to factor
+    pivot (bool, optional): controls whether pivoting is done
+
+Returns:
+    A tuple containing factorization, pivots, and an `IntTensor` where nonzero
+    values indicate whether factorization for each minibatch sample succeeds.
+
+Example::
+
+    >>> A = torch.randn(2, 3, 3)
+    >>> A_LU, pivots, info = A.btrifact_with_info()
+    >>> if info.nonzero.size(0) == 0:
+    >>>   print('LU factorization succeeded for all samples!')
+
+""")
 
 add_docstr(torch._C.btrisolve,
            r"""

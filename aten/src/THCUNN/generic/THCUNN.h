@@ -66,15 +66,18 @@ TH_API void THNN_(BCECriterion_updateOutput)(
                   THCTensor *target,
                   THCTensor *output,
                   bool sizeAverage,
-                  THCTensor *weights);        // [OPTIONAL]
+                  THCTensor *weights,         // [OPTIONAL]
+                  bool reduce);
 
 TH_API void THNN_(BCECriterion_updateGradInput)(
                   THCState *state,
                   THCTensor *input,
                   THCTensor *target,
+                  THCTensor *gradOutput,
                   THCTensor *gradInput,
                   bool sizeAverage,
-                  THCTensor *weights);        // [OPTIONAL]
+                  THCTensor *weights,         // [OPTIONAL]
+                  bool reduce);
 
 TH_API void THNN_(ClassNLLCriterion_updateOutput)(
                   THCState *state,
@@ -121,6 +124,7 @@ TH_API void THNN_(ELU_updateOutput)(
                   THCTensor *input,
                   THCTensor *output,
                   accreal alpha,
+                  accreal scale,
                   bool inplace);
 
 TH_API void THNN_(ELU_updateGradInput)(
@@ -129,7 +133,7 @@ TH_API void THNN_(ELU_updateGradInput)(
                   THCTensor *gradInput,
                   THCTensor *output,
                   accreal alpha,
-                  bool inplace);
+                  accreal scale);
 
 TH_API void THNN_(FeatureLPPooling_updateOutput)(
                   THCState* state,
@@ -1333,6 +1337,7 @@ TH_API void THNN_(VolumetricAveragePooling_updateGradInput)(
                   bool ceil_mode,
                   bool count_include_pad);
 
+// VolumetricConvolution is legacy and purposefully not bound by ATen
 TH_API void THNN_(VolumetricConvolution_updateOutput)(
                   THCState *state,
                   THCTensor *input,

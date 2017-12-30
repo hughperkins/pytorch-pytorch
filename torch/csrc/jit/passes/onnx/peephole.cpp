@@ -21,7 +21,7 @@ std::unordered_set<NodeKind> broadcasting = {
 };
 
 bool isNopTranspose(const std::vector<int64_t> & perm) {
-  for (int64_t i = 0; i < perm.size(); i++)
+  for (int64_t i = 0, perm_size = perm.size(); i < perm_size; i++)
     if (perm[i] != i)
       return false;
   return true;

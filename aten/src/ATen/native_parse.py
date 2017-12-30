@@ -1,3 +1,4 @@
+import re
 import yaml
 
 try:
@@ -7,11 +8,15 @@ except ImportError:
     from yaml import Loader
 
 
-def python_scalar(s):
+def parse_default(s):
     if s.lower() == 'true':
         return True
     elif s.lower() == 'false':
         return False
+    elif s == 'nullptr':
+        return s
+    elif s == '{}':
+        return '{}'
     try:
         return int(s)
     except Exception:
@@ -21,28 +26,42 @@ def python_scalar(s):
 def sanitize_types(typ):
     # split tuples into constituent list
     if typ[0] == '(' and typ[-1] == ')':
-        type_list = [x.strip() for x in typ[1:-1].split(',')]
-    else:
-        type_list = [typ]
-    return type_list
+        return [x.strip() for x in typ[1:-1].split(',')]
+    elif typ == 'Generator*':
+        return ['Generator *']
+    return [typ]
 
 
-def parse_arguments(args):
+def parse_arguments(args, func):
     arguments = []
+    python_default_inits = func.get('python_default_init', {})
 
-    for arg in args.split(','):
+    # TODO: Use a real parser here; this will get bamboozled
+    # by signatures that contain things like std::array<bool, 2> (note the space)
+    for arg in args.split(', '):
         t, name = [a.strip() for a in arg.rsplit(' ', 1)]
         default = None
+        python_default_init = None
 
         if '=' in name:
             ns = name.split('=', 1)
-            name, default = ns[0], python_scalar(ns[1])
+            name, default = ns[0], parse_default(ns[1])
+
+        if name in python_default_inits:
+            assert default is None
+            python_default_init = python_default_inits[name]
 
         typ = sanitize_types(t)
         assert len(typ) == 1
-        argument_dict = {'type': typ[0], 'name': name}
+        argument_dict = {'type': typ[0].rstrip('?'), 'name': name, 'is_nullable': typ[0].endswith('?')}
+        match = re.match(r'IntList\[(\d+)\]', argument_dict['type'])
+        if match:
+            argument_dict['type'] = 'IntList'
+            argument_dict['size'] = int(match.group(1))
         if default is not None:
             argument_dict['default'] = default
+        if python_default_init is not None:
+            argument_dict['python_default_init'] = python_default_init
 
         arguments.append(argument_dict)
     return arguments
@@ -69,8 +88,7 @@ def run(paths):
             declaration['name'] = func.get('name', fn_name)
             declaration['return'] = list(func.get('return', return_type))
             declaration['variants'] = func.get('variants', ['method', 'function'])
-            declaration['template_scalar'] = func.get('template_scalar')
-            declaration['arguments'] = func.get('arguments', parse_arguments(arguments))
+            declaration['arguments'] = func.get('arguments', parse_arguments(arguments, func))
             declaration['type_method_definition_dispatch'] = func.get('dispatch', declaration['name'])
             declarations.append(declaration)
 

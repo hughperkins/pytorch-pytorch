@@ -8,7 +8,7 @@ import unittest
 from torch import multiprocessing
 from torch.utils.data import Dataset, TensorDataset, DataLoader, ConcatDataset
 from torch.utils.data.dataloader import default_collate
-from common import TestCase, run_tests, TEST_NUMPY
+from common import TestCase, run_tests, TEST_NUMPY, IS_WINDOWS
 from common_nn import TEST_CUDA
 
 
@@ -112,6 +112,41 @@ class SleepDataset(Dataset):
         return self.size
 
 
+class SeedDataset(Dataset):
+
+    def __init__(self, size):
+        self.size = size
+
+    def __getitem__(self, idx):
+        return torch.initial_seed()
+
+    def __len__(self):
+        return self.size
+
+
+# Inspired by https://stackoverflow.com/a/26703365
+# This will ensure that each worker at least processes one data
+class SynchronizedSeedDataset(Dataset):
+
+    def __init__(self, size, num_workers):
+        assert size >= num_workers
+        self.count = multiprocessing.Value('i', 0)
+        self.barrier = multiprocessing.Semaphore(0)
+        self.num_workers = num_workers
+        self.size = size
+
+    def __getitem__(self, idx):
+        self.count.value += 1
+        if self.count.value == self.num_workers:
+            self.barrier.release()
+        self.barrier.acquire()
+        self.barrier.release()
+        return torch.initial_seed()
+
+    def __len__(self):
+        return self.size
+
+
 class TestDataLoader(TestCase):
 
     def setUp(self):
@@ -188,6 +223,7 @@ class TestDataLoader(TestCase):
         next(loader1_it)
         next(loader2_it)
 
+    @unittest.skipIf(IS_WINDOWS, "TODO: need to fix this test case for Windows")
     def test_segfault(self):
         def _test_segfault():
             sys.stderr.close()
@@ -204,6 +240,7 @@ class TestDataLoader(TestCase):
         finally:
             p.terminate()
 
+    @unittest.skipIf(IS_WINDOWS, "TODO: need to fix this test case for Windows")
     def test_timeout(self):
         def _test_timeout():
             sys.stderr.close()
@@ -219,6 +256,28 @@ class TestDataLoader(TestCase):
             self.assertNotEqual(p.exitcode, 0)
         finally:
             p.terminate()
+
+    def test_worker_seed(self):
+        num_workers = 6
+        dataset = SynchronizedSeedDataset(num_workers, num_workers)
+        dataloader = DataLoader(dataset, batch_size=1, num_workers=num_workers)
+        seeds = set()
+        for batch in dataloader:
+            seeds.add(batch[0])
+        self.assertEqual(len(seeds), num_workers)
+
+    @unittest.skipIf(IS_WINDOWS, "TODO: need to fix this test case for Windows")
+    def test_worker_init_fn(self):
+        # test custom init function
+        def init_fn(worker_id):
+            torch.manual_seed(12345)
+
+        dataset = SeedDataset(4)
+        dataloader = DataLoader(dataset, batch_size=2, num_workers=2,
+                                worker_init_fn=init_fn)
+        for batch in dataloader:
+            self.assertEqual(12345, batch[0])
+            self.assertEqual(12345, batch[1])
 
     def test_shuffle(self):
         self._test_shuffle(DataLoader(self.dataset, shuffle=True))
@@ -290,6 +349,7 @@ class TestDataLoader(TestCase):
     def test_error_workers(self):
         self._test_error(DataLoader(ErrorDataset(41), batch_size=2, shuffle=True, num_workers=4))
 
+    @unittest.skipIf(IS_WINDOWS, "TODO: need to fix this test case for Windows")
     @unittest.skipIf(not TEST_CUDA, "CUDA unavailable")
     def test_partial_workers(self):
         "check that workers exit even if the iterator is not exhausted"

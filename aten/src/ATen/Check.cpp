@@ -138,7 +138,7 @@ void checkAllSameGPU(CheckedFrom c, ArrayRef<TensorArg> tensors) {
 }
 
 void checkSameType(CheckedFrom c, const TensorArg& t1, const TensorArg& t2) {
-  if (t1->type().ID() != t2->type().ID()) {
+  if (t1->type() != t2->type()) {
     std::ostringstream oss;
     oss << "Expected tensor for " << t1 << " to have the same type as "
         << "tensor for " << t2 << "; but type " << t1->toString() << " "
@@ -187,6 +187,22 @@ void checkAllDefined(CheckedFrom c, ArrayRef<TensorArg> ts) {
   // NB: don't filter defined here
   for (auto t : ts) {
     checkDefined(c, t);
+  }
+}
+
+void checkBackend(CheckedFrom c, const Tensor& t, Backend backend) {
+  if (t.type().backend() != backend) {
+    std::ostringstream oss;
+    oss << "Expected tensor to have " << toString(t.type().backend()) << " Backend, but got tensor with "
+        << toString(t.type().backend()) << " Backend "
+        << "(while checking arguments for " << c << ")";
+    throw std::runtime_error(oss.str());
+  }
+}
+
+void checkBackend(CheckedFrom c, ArrayRef<Tensor> tensors, at::Backend backend) {
+  for (auto &t : tensors) {
+    checkBackend(c, t, backend);
   }
 }
 

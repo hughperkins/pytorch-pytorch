@@ -1,5 +1,7 @@
 #include "python_arg_flatten.h"
 
+#include "torch/csrc/autograd/grad_mode.h"
+
 namespace torch { namespace jit { namespace python {
 
 using namespace torch::autograd;
@@ -41,7 +43,6 @@ void flatten_rec(PyObject* obj, ParsedArgs& args) {
     args.vars.push_back(var);
     args.desc.metadata.emplace_back(var);
     args.desc.structure.push_back(D::Variable);
-    args.is_volatile |= var.is_volatile();
   } else {
     std::string msg = "Only tuples, lists and Variables supported as JIT inputs, but got ";
     msg += THPUtils_typename(obj);
@@ -53,6 +54,7 @@ void flatten_rec(PyObject* obj, ParsedArgs& args) {
 
 ParsedArgs flatten(py::handle obj) {
   ParsedArgs args;
+  args.desc.grad_enabled = autograd::GradMode::is_enabled();
   flatten_rec(obj.ptr(), args);
   return args;
 }
@@ -88,7 +90,7 @@ py::object unflatten_rec(variable_list::iterator& var_it,
     if (var_it == var_it_end)
       throw std::runtime_error("Not enough Variables given to unflatten");
     auto var = *var_it++;
-    return py::reinterpret_borrow<py::object>(THPVariable_Wrap(var));
+    return py::reinterpret_steal<py::object>(THPVariable_Wrap(var));
   }
 }
 

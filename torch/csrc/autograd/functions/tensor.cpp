@@ -21,7 +21,11 @@ auto CopyBackwards::apply(const variable_list& grads) -> variable_list {
   }
   if (should_compute_output(1)) {
     AutoGPU autoGPU(src_device);
-    grad_inputs[1] = grad.toType(*src_type);
+    if (grad.is_cuda() && grad.get_device() != src_device) {
+      grad_inputs[1] = src_type->copy(grad);
+    } else {
+      grad_inputs[1] = grad.toType(*src_type);
+    }
   }
   return grad_inputs;
 };
@@ -161,7 +165,7 @@ auto CopySlices::apply(const variable_list& inputs) -> variable_list {
 
   // TODO: We clone grad_slice because we modify it below and "fn" might save
   // it for the backward of res. We might be able to avoid the clone() if
-  // grad_slice is volatile.
+  // double-backprop is disabled.
   auto res = (*fn)({ grad_slice.clone() });
 
   variable_list grad_inputs(next_functions.size());
