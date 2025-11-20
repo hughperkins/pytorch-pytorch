@@ -534,8 +534,51 @@ class TestTorchDlPack(TestCase):
         ):
             from_dlpack(inp)
 
+    @skipMeta
+    @onlyNativeDeviceTypes
+    @dtypes(
+        *all_types_and_complex_and(
+            torch.half,
+            torch.bfloat16,
+            torch.bool,
+            torch.uint16,
+            torch.uint32,
+            torch.uint64,
+        )
+    )
+    @dtypesIfMPS(*all_mps_types_and(torch.bool, torch.cfloat, torch.chalf))
+    def test_dlpack_byte_offset_handling(self, device, dtype):
+        """Test that from_dlpack correctly converts byte_offset to storage_offset.
+        
+        This test verifies the fix for byte_offset handling. Since toDLPack
+        currently always sets byte_offset=0, we test indirectly by ensuring
+        that tensors with storage_offset work correctly through the DLPack
+        round-trip. The fix ensures that when byte_offset is non-zero in a
+        DLPack tensor, it's correctly converted to storage_offset.
+        """
+        # Create tensor with storage_offset via slicing
+        base = make_tensor((10,), dtype=dtype, device=device)
+        offset_elements = 3
+        view = base[offset_elements:]
+        
+        # Round-trip through DLPack
+        capsule = to_dlpack(view)
+        result = from_dlpack(capsule)
+        
+        # Verify correctness
+        self.assertEqual(result, view)
+        self.assertEqual(result.storage_offset(), view.storage_offset())
+        
+        # Test with different offsets
+        for offset in [1, 2, 5]:
+            view_offset = base[offset:]
+            capsule_offset = to_dlpack(view_offset)
+            result_offset = from_dlpack(capsule_offset)
+            self.assertEqual(result_offset, view_offset)
+            self.assertEqual(result_offset.storage_offset(), view_offset.storage_offset())
 
 instantiate_device_type_tests(TestTorchDlPack, globals(), allow_mps=True)
+
 
 if __name__ == "__main__":
     run_tests()

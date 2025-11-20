@@ -393,13 +393,13 @@ T* toDLPackImpl(const Tensor& src) {
   atDLMTensor->handle = src;
   atDLMTensor->tensor.manager_ctx = atDLMTensor;
   atDLMTensor->tensor.deleter = &deleter<T>;
-  atDLMTensor->tensor.dl_tensor.data = src.data_ptr();
+  atDLMTensor->tensor.dl_tensor.data = const_cast<void*>(src.storage().data());
   atDLMTensor->tensor.dl_tensor.device = torchDeviceToDLDevice(src.device());
   atDLMTensor->tensor.dl_tensor.ndim = static_cast<int32_t>(src.dim());
   atDLMTensor->tensor.dl_tensor.dtype = getDLDataType(src);
   atDLMTensor->tensor.dl_tensor.shape = const_cast<int64_t*>(src.sizes().data());
   atDLMTensor->tensor.dl_tensor.strides = const_cast<int64_t*>(src.strides().data());
-  atDLMTensor->tensor.dl_tensor.byte_offset = 0;
+  atDLMTensor->tensor.dl_tensor.byte_offset = src.storage_offset() * src.element_size();
   fillVersion(&atDLMTensor->tensor);
 
   return &(atDLMTensor->tensor);
